@@ -1,4 +1,4 @@
-<div align="center"><img width="300" alt="BirdNET+ logo" src="https://github.com/user-attachments/assets/e0483a4e-8ead-45ff-910b-afb4938ad9ed" /></div>
+<div align="center"><img width="300" alt="BirdNET+ logo" src="logo-birdnet-circle.png"></div>
 
 # birdnet-V3.0-dev
 CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of per-chunk detections.
