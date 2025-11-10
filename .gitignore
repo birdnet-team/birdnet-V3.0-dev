@@ -1,3 +1,10 @@
+# Ignore downloaded model files
+models/*.pt
+models/*.csv
+
+# Ignore result files
+*.results.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
