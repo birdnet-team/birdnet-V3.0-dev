@@ -3,14 +3,14 @@
 # birdnet-V3.0-dev
 CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of per-chunk detections.
 
-Key changes vs earlier model versions:
+**Key changes vs earlier model versions:**
 - Variable-length input (removed fixed 3 s constraint)
 - Model takes 32 kHz audio input (compared to 48 kHz previously)
 - Improved architecture and training procedure
 - Much larger and more diverse training dataset
 - Expanded set of non-bird species
 
-Pending revisions:
+**Pending revisions:**
 - Cross-platform / cross-framework packaging
 - Species list curation (inclusion/exclusion based on data availability)
 - Final architecture and model size
