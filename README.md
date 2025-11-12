@@ -1,7 +1,9 @@
 <div align="center"><img width="300" alt="BirdNET+ logo" src="img/logo-birdnet-circle.png"></div>
 
 # birdnet-V3.0-dev
-CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of per-chunk detections.
+CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of per-chunk detections. Use for experimentation and exploration of the new model architecture and capabilities.
+
+We will release updated models, labels, and code as we finalize the V3.0 release.
 
 **Key changes vs earlier model versions:**
 - Variable-length input (removed fixed 3 s constraint)
@@ -16,7 +18,7 @@ CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of p
 - Final architecture and model size
 - Additional non-target / environmental classes (human, rain, wind, engines, etc.)
 
-Note: Developer preview; models, labels, and code will change. Trained on a subset of data and may not reflect final performance.
+### ⚠️ **Note:** This is a developer preview; models, labels, and code will change. Trained on a subset of data and may not reflect final performance.
 
 ## Install
 ```bash
@@ -39,6 +41,7 @@ python analyze.py /path/to/audio.wav
 - `--model` Path to model file (default: models/BirdNET+_V3.0-preview1_EUNA_1K_FP32.pt)
 - `--labels` Path to labels CSV (default: models/BirdNET+_V3.0-preview1_EUNA_1K_Labels.csv)
 - `--chunk_length` Chunk length in seconds (default: 3.0)
+- `--overlap` Chunk overlap in seconds (default: 0.0)
 - `--device` cpu|cuda (default: auto)
 - `--min-conf` Minimum confidence threshold for exporting detections (default: 0.15)
 - `--out-csv` Output CSV path (default: <audio>.results.csv)
