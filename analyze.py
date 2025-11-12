@@ -38,16 +38,37 @@ def load_labels(labels_csv: str) -> List[str]:
     return labels
 
 
-def chunk_audio(y: np.ndarray, chunk_length: float, sr: int = SR) -> Tuple[np.ndarray, List[Tuple[float, float]]]:
+def chunk_audio(y: np.ndarray, chunk_length: float, overlap: float = 0.0, sr: int = SR) -> Tuple[np.ndarray, List[Tuple[float, float]]]:
+    """
+    Split audio into chunks with optional temporal overlap.
+
+    Args:
+        y: 1D numpy array (mono audio).
+        chunk_length: Length of each chunk in seconds (>0).
+        overlap: Overlap between consecutive chunks in seconds (0 <= overlap < chunk_length).
+        sr: Sample rate.
+
+    Returns:
+        chunks: Float32 array of shape [N, chunk_samples]
+        spans: List of (start_sec, end_sec) for each chunk (end_sec truncated to original audio length).
+    """
     chunk_len = int(round(chunk_length * sr))
     if chunk_len <= 0:
         raise ValueError("chunk_length must be > 0")
+    if overlap < 0:
+        raise ValueError("overlap must be >= 0")
+    if overlap >= chunk_length:
+        raise ValueError("overlap must be < chunk_length")
+
+    step = chunk_len - int(round(overlap * sr))
+    if step <= 0:
+        raise ValueError("Invalid step size (adjust overlap/chunk_length).")
 
     n = len(y)
     if n == 0:
         return np.zeros((0, chunk_len), dtype=np.float32), []
 
-    starts = np.arange(0, n, chunk_len)
+    starts = np.arange(0, n, step)
     chunks = []
     spans = []
     for s in starts:
@@ -58,6 +79,8 @@ def chunk_audio(y: np.ndarray, chunk_length: float, sr: int = SR) -> Tuple[np.nd
             seg = np.concatenate([seg, pad], axis=0)
         chunks.append(seg.astype(np.float32, copy=False))
         spans.append((s / sr, min(e, n) / sr))
+        if e >= n:
+            break
     return np.stack(chunks, axis=0), spans
 
 
@@ -145,6 +168,7 @@ def main():
     parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to TorchScript .pt model")
     parser.add_argument("--labels", default=DEFAULT_LABELS_PATH, help="Path to labels CSV")
     parser.add_argument("--chunk_length", type=float, default=3.0, help="Chunk length in seconds (default: 3.0)")
+    parser.add_argument("--overlap", type=float, default=0.0, help="Chunk overlap in seconds (default: 0.0; must be < chunk_length)")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda" if torch.cuda.is_available() else "cpu", help="Inference device")
     parser.add_argument("--out-csv", help="Path to write per-chunk CSV (default: <audio>.results.csv)")
     parser.add_argument("--min-conf", type=float, default=0.15, help="Minimum confidence threshold for exporting a detection (default: 0.15)")
@@ -185,7 +209,7 @@ def main():
         print(f"Error loading audio: {e}", file=sys.stderr)
         sys.exit(1)
 
-    chunks, spans = chunk_audio(y, args.chunk_length, sr=SR)
+    chunks, spans = chunk_audio(y, args.chunk_length, overlap=args.overlap, sr=SR)
     if len(chunks) == 0:
         print("No audio samples to process.", file=sys.stderr)
         sys.exit(1)
@@ -195,7 +219,7 @@ def main():
     out_csv = args.out_csv if args.out_csv else (os.path.splitext(args.audio)[0] + ".results.csv")
     rows = save_per_chunk_csv(args.audio, spans, probs_chunks, labels, out_csv, args.min_conf)
 
-    print(f"Chunks processed: {len(chunks)}; detections exported: {rows} (min_conf={args.min_conf})")
+    print(f"Chunks processed: {len(chunks)}; detections exported: {rows} (min_conf={args.min_conf}, overlap={args.overlap})")
     print(f"CSV: {out_csv}")
     print(f"SR={SR}, Device={device}")
 
