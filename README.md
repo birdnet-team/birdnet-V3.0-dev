@@ -60,6 +60,39 @@ python analyze.py example/soundscape.wav --chunk_length 2.0 --min-conf 0.2 --out
 python analyze.py example/soundscape.wav --model models/BirdNET+_V3.0-preview1_EUNA_1K_FP32.pt --device cuda
 ```
 
+## Streamlit web app
+
+An interactive UI to upload audio, view a spectrogram, run the model, and visualize results.
+
+### Start the app
+```bash
+# Activate your venv first if you use one
+source .venv/bin/activate
+
+# Run Streamlit
+streamlit run app.py
+```
+
+- The app opens in your browser (usually http://localhost:8501).
+- On first run, if you keep the default paths, the model and labels will be downloaded into models/.
+
+Headless/server usage (Linux):
+```bash
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+# then open http://<server-ip>:8501 in your browser
+```
+
+### How to use
+- Upload an audio file (wav, mp3, ogg, flac, m4a).
+- Adjust settings in the sidebar:
+  - Chunk length (s), Overlap (s)
+  - Min confidence threshold
+  - Device (cpu/cuda, if available)
+- The app will:
+  - Render a mel spectrogram of the audio
+  - Show an overall bar chart of aggregated scores (top-N)
+  - List per-chunk detections (sorted by score) with a Download CSV button
+
 ## License
 
 - **Source Code**: The source code for this project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
