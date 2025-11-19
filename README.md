@@ -37,7 +37,7 @@ source .venv/Scripts/activate
 pip install -r requirements.txt
 ```
 
-### Optionally, enable CUDA support
+### Optionally, on Windows, enable CUDA support
 This option requires you have an NVIDIA GPU with CUDA installed and visible to the environment, check for this by typing:
 ```bash
 nvidia-smi
