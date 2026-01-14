@@ -25,7 +25,7 @@ from analyze import (
     SR,
 )
 
-st.set_page_config(page_title="BirdNET+ V3.0 Preview 2", layout="wide")
+st.set_page_config(page_title="BirdNET+ V3.0 Preview", layout="wide")
 
 # ---------------------------
 # Caching
@@ -88,7 +88,7 @@ if os.path.isfile(labels_path):
         )
     
 
-st.title("BirdNET+ V3.0 Developer Preview")
+st.title("BirdNET+ V3.0 Developer Preview 3 - 11K Species")
 st.caption("Developer preview; models, labels, and outputs may change with future releases.")
 
 # ---------------------------

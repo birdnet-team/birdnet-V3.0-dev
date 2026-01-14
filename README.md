@@ -5,7 +5,14 @@ CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of p
 
 We will release updated models, labels, and code as we finalize the V3.0 release.
 
-**Key changes vs earlier model versions:**
+**Most recent version:**
+- BirdNET+ V3.0 Developer Preview 3 - 11K Species (Jan 2026)
+- Improves model performance despite larger species set
+- Still lacks a noise fallback class, to be added in future releases
+- Species list needs a cleanup and includes some weird entries
+- [Download model and labels from Zenodo](https://zenodo.org/records/18247420)
+
+**Key changes vs 2.X model versions:**
 - Variable-length input (removed fixed 3 s constraint)
 - Model takes 32 kHz audio input (compared to 48 kHz previously)
 - Improved architecture and training procedure
@@ -54,7 +61,7 @@ pip install -U torch torchvision torchaudio --index-url https://download.pytorch
 
 ## Usage
 
-Upon first run, the default model and labels will be automatically downloaded to the `models/` directory. You can download them manually from [Zenodo](https://zenodo.org/record/17571190).
+Upon first run, the default model and labels will be automatically downloaded to the `models/` directory. You can download them manually from [Zenodo](https://zenodo.org/records/18247420).
 
 Run the analysis with:
 
@@ -63,8 +70,8 @@ python analyze.py /path/to/audio.wav
 ```
 
 ### Options
-- `--model` Path to model file (default: models/BirdNET+_V3.0-preview2_EUNA_1K_FP32.pt)
-- `--labels` Path to labels CSV (default: models/BirdNET+_V3.0-preview2_EUNA_1K_Labels.csv)
+- `--model` Path to model file (default: models/BirdNET+_V3.0-preview3_Global_11K_FP32.pt)
+- `--labels` Path to labels CSV (default: models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv)
 - `--chunk_length` Chunk length in seconds (default: 3.0)
 - `--overlap` Chunk overlap in seconds (default: 0.0)
 - `--device` cpu|cuda (default: auto)
@@ -87,7 +94,7 @@ python analyze.py example/soundscape.wav
 python analyze.py example/soundscape.wav --chunk_length 2.0 --min-conf 0.2 --out-csv results.csv --export-embeddings
 
 # Specify model and run on CUDA-enabled GPU
-python analyze.py example/soundscape.wav --model models/BirdNET+_V3.0-preview1_EUNA_1K_FP32.pt --device cuda
+python analyze.py example/soundscape.wav --model models/BirdNET+_V3.0-preview3_Global_11K_FP32.pt --device cuda
 ```
 
 **Note:** The minimal model call will return embeddings and predictions for all chunks and needs to look like this:
@@ -151,16 +158,16 @@ Please refer to the [TERMS OF USE](TERMS_OF_USE.md) file for detailed terms and 
 
 ## Citation
 
-Lasseck, M., Eibl, M., Klinck, H., & Kahl, S. (2025). BirdNET+ V3.0 model developer preview (Preview 2). Zenodo. https://doi.org/10.5281/zenodo.17631020
+Lasseck, M., Eibl, M., Klinck, H., & Kahl, S. (2025). BirdNET+ V3.0 model developer preview (Preview 2). Zenodo. https://doi.org/10.5281/zenodo.18247420
 
 ```bibtex
 @dataset{lasseck2025birdnet,
-  title     = {BirdNET+ V3.0 model developer preview (Preview 2)},
+  title     = {BirdNET+ V3.0 model developer preview (Preview 3)},
   author    = {Lasseck, M. and Eibl, M. and Klinck, H. and Kahl, S.},
-  year      = {2025},
+  year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.17631020},
-  url       = {https://doi.org/10.5281/zenodo.17631020}
+  doi       = {10.5281/zenodo.18247420},
+  url       = {https://doi.org/10.5281/zenodo.18247420}
 }
 ```
 
