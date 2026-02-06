@@ -152,7 +152,7 @@ We also provide a browser-only demo that mirrors the Streamlit UI using onnxrunt
 ### Start locally
 ```bash
 cd web-demo
-./scripts/download-model.sh
+./scripts/download-model.sh  #./scripts/download-model.ps1 on Windows
 npm install
 npm run dev
 ```
@@ -164,14 +164,6 @@ npm install
 npm run build
 npm run preview
 ```
-
-### Notes
-- The demo defaults to loading the Preview 3 ONNX model and labels from `web-demo/public/assets/`. Run `./scripts/download-model.sh` once before starting the dev server.
-- If you still run into cross-origin issues, use the local file inputs to load the `.onnx` model and `.csv` labels manually.
-- The ONNX runtime WASM files are copied into `web-demo/public/ort/` during `npm install` and are ignored by default.
-- We are not hosting a GitHub Pages demo due to the model size and browser CORS restrictions.
-- The downloaded assets are large and are ignored by default in `.gitignore`.
-- The model expects 32 kHz mono audio; the demo resamples uploaded audio automatically.
 
 ## License
 
