@@ -145,6 +145,34 @@ streamlit run app.py --server.address 0.0.0.0 --server.port 8501
   - Show an overall bar chart of aggregated scores (top-N)
   - List per-chunk detections (sorted by score) with a Download CSV button
 
+## Web demo (ONNX Runtime Web)
+
+We also provide a browser-only demo that mirrors the Streamlit UI using onnxruntime-web. It runs fully in JavaScript and is intended to be built and run locally (the ONNX model is large and not bundled).
+
+### Start locally
+```bash
+cd web-demo
+./scripts/download-model.sh
+npm install
+npm run dev
+```
+
+### Build static site
+```bash
+cd web-demo
+npm install
+npm run build
+npm run preview
+```
+
+### Notes
+- The demo defaults to loading the Preview 3 ONNX model and labels from `web-demo/public/assets/`. Run `./scripts/download-model.sh` once before starting the dev server.
+- If you still run into cross-origin issues, use the local file inputs to load the `.onnx` model and `.csv` labels manually.
+- The ONNX runtime WASM files are copied into `web-demo/public/ort/` during `npm install` and are ignored by default.
+- We are not hosting a GitHub Pages demo due to the model size and browser CORS restrictions.
+- The downloaded assets are large and are ignored by default in `.gitignore`.
+- The model expects 32 kHz mono audio; the demo resamples uploaded audio automatically.
+
 ## License
 
 - **Source Code**: The source code for this project is licensed under the [MIT License](https://opensource.org/licenses/MIT).

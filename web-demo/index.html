@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BirdNET+ V3.0 Web Demo</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="load-screen" class="load-screen">
+        <div class="load-card">
+          <p class="eyebrow">BirdNET+ V3.0</p>
+          <h1>Browser Demo</h1>
+          <button id="load-model" class="btn btn--primary">Load model</button>
+          <div id="load-progress" class="progress hidden">
+            <div class="progress__bar"></div>
+          </div>
+          <p id="load-status" class="muted">Model not loaded</p>
+        </div>
+      </div>
+
+      <div id="app-shell" class="app-shell hidden">
+        <aside class="sidebar">
+          <div class="sidebar__section">
+            <p class="eyebrow">Settings</p>
+            <span id="model-status" class="status-pill">Model ready</span>
+          </div>
+          <div class="sidebar__section grid">
+            <div class="field">
+              <label for="chunk-length">Chunk length (s)</label>
+              <input id="chunk-length" type="number" min="0.5" max="30" step="0.5" value="3" />
+            </div>
+            <div class="field">
+              <label for="overlap">Overlap (s)</label>
+              <input id="overlap" type="number" min="0" max="29.5" step="0.5" value="0" />
+            </div>
+            <div class="field">
+              <label for="batch-size">Batch size</label>
+              <input id="batch-size" type="number" min="1" max="128" step="1" value="16" />
+            </div>
+            <div class="field">
+              <label for="min-conf">Min confidence</label>
+              <input id="min-conf" type="number" min="0" max="1" step="0.01" value="0.25" />
+            </div>
+          </div>
+          <div class="sidebar__section">
+            <div class="field">
+              <label for="model-url">Model URL (ONNX)</label>
+              <input
+                id="model-url"
+                type="url"
+                value="/assets/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx"
+              />
+            </div>
+            <div class="field">
+              <label for="labels-url">Labels URL (CSV)</label>
+              <input
+                id="labels-url"
+                type="url"
+                value="/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv"
+              />
+            </div>
+            <div class="field">
+              <label for="local-model">Local model + labels</label>
+              <div class="row">
+                <input id="local-model" type="file" accept=".onnx" />
+                <input id="local-labels" type="file" accept=".csv" />
+              </div>
+            </div>
+          </div>
+          <div class="sidebar__section">
+            <button id="run-inference" class="btn" disabled>Run analysis</button>
+            <button id="download-csv" class="btn btn--ghost" disabled>Download CSV</button>
+            <p id="run-status" class="status muted">Upload audio to begin.</p>
+          </div>
+        </aside>
+
+        <main class="main">
+          <section class="panel">
+            <h2>Audio</h2>
+            <div id="dropzone" class="dropzone">
+              <input id="audio-file" type="file" accept=".wav,.mp3,.ogg,.flac,.m4a" />
+              <div>
+                <p>Drop audio here or click to upload</p>
+                <small id="audio-meta" class="muted">No file loaded</small>
+              </div>
+            </div>
+          </section>
+
+          <section id="spectrogram-section" class="panel hidden">
+            <h2>Spectrogram</h2>
+            <canvas id="spectrogram" width="900" height="220"></canvas>
+          </section>
+
+          <section id="results-section" class="panel hidden">
+            <h2>Results</h2>
+            <div class="table-wrap">
+              <table id="detections-table">
+                <thead>
+                  <tr>
+                    <th>Start (s)</th>
+                    <th>End (s)</th>
+                    <th>Scientific name</th>
+                    <th>Common name</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p id="detections-note" class="muted"></p>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
