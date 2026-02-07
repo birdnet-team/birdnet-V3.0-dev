@@ -315,7 +315,7 @@ function renderDetectionsTable(detections: DetectionRow[]): void {
   for (let i = 0; i < limit; i++) {
     const detection = detections[i];
     const tr = document.createElement("tr");
-    tr.classList.add("table-row");
+    tr.className = "cursor-pointer hover:bg-slate-50 transition-colors";
     tr.tabIndex = 0;
     tr.setAttribute("role", "button");
     tr.setAttribute(
@@ -325,11 +325,11 @@ function renderDetectionsTable(detections: DetectionRow[]): void {
     tr.dataset.start = detection.start.toString();
     tr.dataset.end = detection.end.toString();
     tr.innerHTML = `
-      <td>${detection.start.toFixed(3)}</td>
-      <td>${detection.end.toFixed(3)}</td>
-      <td>${detection.scientific}</td>
-      <td>${detection.common}</td>
-      <td>${detection.confidence.toFixed(3)}</td>
+      <td class="p-2 border-b border-slate-100">${detection.start.toFixed(3)}</td>
+      <td class="p-2 border-b border-slate-100">${detection.end.toFixed(3)}</td>
+      <td class="p-2 border-b border-slate-100">${detection.scientific}</td>
+      <td class="p-2 border-b border-slate-100">${detection.common}</td>
+      <td class="p-2 border-b border-slate-100">${detection.confidence.toFixed(3)}</td>
     `;
     fragment.appendChild(tr);
   }
