@@ -215,15 +215,15 @@ function setSegmentStatus(text: string): void {
 /** Updates the model status pill (loaded/not loaded) */
 function setModelStatus(text: string, isOk: boolean): void {
   elements.modelStatus.textContent = text;
-  elements.modelStatus.classList.toggle("status-pill--ok", isOk);
-  elements.modelStatus.classList.toggle("status-pill--bad", !isOk);
+  elements.modelStatus.classList.toggle("status-pill-ok", isOk);
+  elements.modelStatus.classList.toggle("status-pill-bad", !isOk);
 }
 
 /** Updates the execution provider status pill (WebGL/WASM) */
 function setProviderStatus(text: string, level: "ok" | "warn"): void {
   elements.providerStatus.textContent = text;
-  elements.providerStatus.classList.toggle("status-pill--ok", level === "ok");
-  elements.providerStatus.classList.toggle("status-pill--warn", level === "warn");
+  elements.providerStatus.classList.toggle("status-pill-ok", level === "ok");
+  elements.providerStatus.classList.toggle("status-pill-warn", level === "warn");
 }
 
 /** Formats bytes as human-readable size (KB, MB) */
@@ -286,10 +286,10 @@ function playSegment(
 
   // Update row highlighting
   if (activeSegmentRow && activeSegmentRow !== row) {
-    activeSegmentRow.classList.remove("table-row--active");
+    activeSegmentRow.classList.remove("table-row-active");
   }
   if (row) {
-    row.classList.add("table-row--active");
+    row.classList.add("table-row-active");
     activeSegmentRow = row;
   }
 }
@@ -608,25 +608,25 @@ elements.changeFileBtn.addEventListener("click", () => {
 elements.runInferenceBtn.addEventListener("click", async () => {
   // Load model on first click
   if (!modelReady) {
-    elements.runInferenceBtn.classList.add("btn--loading");
+    elements.runInferenceBtn.classList.add("btn-loading");
     elements.runInferenceBtn.disabled = true;
     await loadModel();
   }
 
   // Abort if model failed to load
   if (!modelReady) {
-    elements.runInferenceBtn.classList.remove("btn--loading");
+    elements.runInferenceBtn.classList.remove("btn-loading");
     elements.runInferenceBtn.disabled = false;
     return;
   }
 
   // Run inference with loading state
-  elements.runInferenceBtn.classList.add("btn--loading");
+  elements.runInferenceBtn.classList.add("btn-loading");
   elements.runInferenceBtn.disabled = true;
   try {
     await runInference();
   } finally {
-    elements.runInferenceBtn.classList.remove("btn--loading");
+    elements.runInferenceBtn.classList.remove("btn-loading");
     elements.runInferenceBtn.disabled = false;
   }
 });
