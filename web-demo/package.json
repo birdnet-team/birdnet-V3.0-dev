@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-ort-wasm.js",
     "dev": "vite",
+    "prebuild": "node scripts/copy-ort-wasm.js",
     "build": "vite build",
+    "prepreview": "node scripts/copy-ort-wasm.js",
     "preview": "vite preview",
     "postinstall": "node scripts/copy-ort-wasm.js"
   },

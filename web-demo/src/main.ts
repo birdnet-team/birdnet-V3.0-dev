@@ -17,10 +17,6 @@ const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T | null;
 
 const elements = {
-  loadModelBtn: $("load-model") as HTMLButtonElement,
-  loadScreen: $("load-screen") as HTMLDivElement,
-  loadProgress: $("load-progress") as HTMLDivElement,
-  loadStatus: $("load-status") as HTMLParagraphElement,
   appShell: $("app-shell") as HTMLDivElement,
   modelStatus: $("model-status") as HTMLSpanElement,
   providerStatus: $("provider-status") as HTMLSpanElement,
@@ -48,7 +44,7 @@ const elements = {
   segmentStatus: $("segment-status") as HTMLSpanElement
 };
 
-if (!elements.loadModelBtn) {
+if (!elements.runInferenceBtn) {
   throw new Error("Required DOM elements missing");
 }
 
@@ -58,6 +54,7 @@ let labelScientific: string[] = [];
 let labelCommon: string[] = [];
 let session: ort.InferenceSession | null = null;
 let modelReady = false;
+let modelLoading = false;
 let lastDetectionsCsv = "";
 let audioUrl: string | null = null;
 let segmentEnd: number | null = null;
@@ -73,10 +70,6 @@ function setSegmentStatus(text: string) {
   elements.segmentStatus.textContent = text;
 }
 
-function setLoadStatus(text: string) {
-  elements.loadStatus.textContent = text;
-}
-
 function setModelStatus(text: string, ok: boolean) {
   elements.modelStatus.textContent = text;
   elements.modelStatus.classList.toggle("status-pill--ok", ok);
@@ -87,16 +80,6 @@ function setProviderStatus(text: string, level: "ok" | "warn") {
   elements.providerStatus.textContent = text;
   elements.providerStatus.classList.toggle("status-pill--ok", level === "ok");
   elements.providerStatus.classList.toggle("status-pill--warn", level === "warn");
-}
-
-function setLoadingState(loading: boolean) {
-  elements.loadProgress.classList.toggle("hidden", !loading);
-  elements.loadModelBtn.disabled = loading;
-}
-
-function showAppShell() {
-  elements.loadScreen.classList.add("hidden");
-  elements.appShell.classList.remove("hidden");
 }
 
 function bytesToSize(bytes: number) {
@@ -371,14 +354,16 @@ async function loadLabelsFromFile(file: File) {
 }
 
 function updateRunButton() {
-  const ready = modelReady && !!audioData;
+  const ready = !!audioData && !modelLoading;
   elements.runInferenceBtn.disabled = !ready;
 }
 
 async function handleLoadModel() {
+  if (modelLoading) return;
   try {
-    setLoadingState(true);
-    setLoadStatus("Loading model...");
+    modelLoading = true;
+    updateRunButton();
+    setStatus("Loading model...");
     setModelStatus("Loading model...", false);
     const localModel = elements.localModel.files?.[0] || null;
     const localLabels = elements.localLabels.files?.[0] || null;
@@ -409,15 +394,13 @@ async function handleLoadModel() {
     }
     modelReady = true;
     setModelStatus("Model ready", true);
-    setLoadStatus("Model ready");
-    showAppShell();
   } catch (err) {
     modelReady = false;
     session = null;
     setModelStatus("Failed to load model", false);
-    setLoadStatus((err as Error).message);
+    setStatus((err as Error).message);
   }
-  setLoadingState(false);
+  modelLoading = false;
   updateRunButton();
 }
 
@@ -653,10 +636,6 @@ async function handleAudioFile(file?: File) {
   renderSpectrogram(audioData);
 }
 
-elements.loadModelBtn.addEventListener("click", () => {
-  handleLoadModel();
-});
-
 elements.dropzone.addEventListener("click", () => {
   elements.audioFile.click();
 });
@@ -683,7 +662,11 @@ elements.audioFile.addEventListener("change", () => {
   handleAudioFile();
 });
 
-elements.runInferenceBtn.addEventListener("click", () => {
+elements.runInferenceBtn.addEventListener("click", async () => {
+  if (!modelReady) {
+    await handleLoadModel();
+  }
+  if (!modelReady) return;
   runInference();
 });
 
@@ -737,4 +720,4 @@ elements.detectionsTable.addEventListener("keydown", (event) => {
 
 updateRunButton();
 setStatus("Upload audio to begin.");
-setLoadStatus("Model not loaded");
+setModelStatus("Model not loaded", false);
