@@ -75,19 +75,17 @@
                 <small id="audio-meta" class="dropzone__meta muted">No file loaded</small>
               </div>
             </div>
-            <div class="audio-controls">
+            <div id="spectrogram-section" class="spectrogram-section hidden">
+              <div class="spectrogram-wrap">
+                <canvas id="spectrogram" width="900" height="300"></canvas>
+              </div>
+            </div>
+            <div id="audio-controls" class="audio-controls hidden">
               <audio id="audio-player" controls preload="metadata"></audio>
               <div class="audio-meta-row">
                 <span id="audio-time" class="muted">00:00 / 00:00</span>
                 <span id="segment-status" class="muted"></span>
               </div>
-            </div>
-          </section>
-
-          <section id="spectrogram-section" class="panel hidden">
-            <h2>Spectrogram</h2>
-            <div class="spectrogram-wrap">
-              <canvas id="spectrogram" width="900" height="320"></canvas>
             </div>
           </section>
 

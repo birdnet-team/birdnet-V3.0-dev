@@ -6,7 +6,7 @@ const SR = 32000;
 const N_FFT = 2048; // Higher resolution for better frequency detail
 const HOP = 512;    // Balanced hop for smooth time axis
 const N_MELS = 128;
-const MAX_TABLE_ROWS = 5000;
+const MAX_TABLE_ROWS = 10;
 const DYNAMIC_RANGE_DB = 80; // Tighter range for better visual contrast
 
 const MODEL_URL_DEFAULT =
@@ -40,6 +40,7 @@ const elements = {
   detectionsTable: $("detections-table") as HTMLTableElement,
   detectionsNote: $("detections-note") as HTMLParagraphElement,
   downloadCsv: $("download-csv") as HTMLButtonElement,
+  audioControls: $("audio-controls") as HTMLDivElement,
   audioPlayer: $("audio-player") as HTMLAudioElement,
   audioTime: $("audio-time") as HTMLSpanElement,
   segmentStatus: $("segment-status") as HTMLSpanElement
@@ -644,6 +645,7 @@ async function handleAudioFile(file?: File) {
   resetDownloads();
   elements.resultsSection.classList.add("hidden");
   elements.spectrogramSection.classList.remove("hidden");
+  elements.audioControls.classList.remove("hidden");
   updateRunButton();
   renderSpectrogram(audioData);
 }
@@ -676,10 +678,23 @@ elements.audioFile.addEventListener("change", () => {
 
 elements.runInferenceBtn.addEventListener("click", async () => {
   if (!modelReady) {
+    elements.runInferenceBtn.classList.add("btn--loading");
+    elements.runInferenceBtn.disabled = true;
     await handleLoadModel();
   }
-  if (!modelReady) return;
-  runInference();
+  if (!modelReady) {
+    elements.runInferenceBtn.classList.remove("btn--loading");
+    elements.runInferenceBtn.disabled = false;
+    return;
+  }
+  elements.runInferenceBtn.classList.add("btn--loading");
+  elements.runInferenceBtn.disabled = true;
+  try {
+    await runInference();
+  } finally {
+    elements.runInferenceBtn.classList.remove("btn--loading");
+    elements.runInferenceBtn.disabled = false;
+  }
 });
 
 elements.downloadCsv.addEventListener("click", () => {

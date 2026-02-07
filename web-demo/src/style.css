@@ -225,6 +225,34 @@ select:focus {
   box-shadow: none;
 }
 
+.btn:disabled:hover {
+  transform: none;
+}
+
+.btn--loading {
+  position: relative;
+  color: transparent;
+  pointer-events: none;
+}
+
+.btn--loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  content: "•••";
+  letter-spacing: 4px;
+  animation: loading-dots 1.2s ease-in-out infinite;
+}
+
+@keyframes loading-dots {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
 .btn--primary {
   background: var(--accent);
 }
@@ -343,6 +371,10 @@ select:focus {
   gap: 12px;
 }
 
+.spectrogram-section {
+  margin-top: 16px;
+}
+
 .spectrogram-wrap {
   position: relative;
   border-radius: 14px;
@@ -364,10 +396,17 @@ select:focus {
 }
 
 .table-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 400px;
   border-radius: 12px;
   border: 1px solid var(--stroke);
   background: #fff;
+}
+
+.table-wrap thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 table {
