@@ -255,7 +255,7 @@ function clearSegmentPlayback(): void {
   segmentEndTime = null;
   setSegmentStatus("");
   if (activeSegmentRow) {
-    activeSegmentRow.classList.remove("table-row--active");
+    activeSegmentRow.classList.remove("table-row-active");
     activeSegmentRow = null;
   }
 }
