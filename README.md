@@ -165,6 +165,8 @@ npm run build
 npm run preview
 ```
 
+**Note**: ONNX Runtime Web can load models from the local filesystem or a remote URL, but with large models, it's recommended to run the demo locally to avoid long load times and potential CORS issues.
+
 ## License
 
 - **Source Code**: The source code for this project is licensed under the [MIT License](https://opensource.org/licenses/MIT).

@@ -1,137 +1,256 @@
+/**
+ * BirdNET+ Inference Web Worker
+ *
+ * Runs ONNX model inference in a separate thread to prevent UI freezing.
+ * Communicates with main thread via postMessage API.
+ *
+ * Responsibilities:
+ * - Loading the ONNX model (with WebGL preference, WASM fallback)
+ * - Parsing species labels from CSV
+ * - Chunking audio and running batched inference
+ * - Reporting progress during long inference runs
+ */
+
 import * as ort from "onnxruntime-web";
+import type {
+  DetectionRow,
+  MessageLoadModel,
+  MessageRunInference,
+  WorkerMessage
+} from "./types";
+
+// -----------------------------------------------------------------------------
+// ONNX Runtime Configuration
+// -----------------------------------------------------------------------------
 
 // Configure WASM paths for worker context
+// Files are served from /ort/ in the public folder
 ort.env.wasm.wasmPaths = "/ort/";
 
+// -----------------------------------------------------------------------------
+// Worker State
+// -----------------------------------------------------------------------------
+
+/** Loaded ONNX inference session */
 let session: ort.InferenceSession | null = null;
+
+/** Scientific names indexed by model output position */
 let labelScientific: string[] = [];
+
+/** Common names indexed by model output position */
 let labelCommon: string[] = [];
 
-type MessageLoadModel = {
-  type: "loadModel";
-  id: number;
-  modelUrl?: string;
-  modelBuffer?: ArrayBuffer;
-  labelsUrl?: string;
-  labelsText?: string;
-};
+// -----------------------------------------------------------------------------
+// CSV Parsing
+// -----------------------------------------------------------------------------
 
-type MessageRunInference = {
-  type: "runInference";
-  id: number;
-  audioData: Float32Array;
-  chunkLength: number;
-  overlap: number;
-  batchSize: number;
-  minConf: number;
-  sampleRate: number;
-};
-
-type WorkerMessage = MessageLoadModel | MessageRunInference;
-
-type DetectionRow = {
-  start: number;
-  end: number;
-  scientific: string;
-  common: string;
-  confidence: number;
-};
-
-function parseCsvLine(line: string, delimiter: string) {
-  const out: string[] = [];
+/**
+ * Parses a single CSV line, handling quoted fields.
+ * Supports fields with commas inside quotes.
+ *
+ * @param line - Single line from CSV file
+ * @param delimiter - Field separator (semicolon for BirdNET labels)
+ * @returns Array of field values
+ */
+function parseCsvLine(line: string, delimiter: string): string[] {
+  const fields: string[] = [];
   let current = "";
   let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (ch === '"') {
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
       inQuotes = !inQuotes;
       continue;
     }
-    if (ch === delimiter && !inQuotes) {
-      out.push(current);
+
+    if (char === delimiter && !inQuotes) {
+      fields.push(current);
       current = "";
     } else {
-      current += ch;
+      current += char;
     }
   }
-  out.push(current);
-  return out;
+
+  fields.push(current);
+  return fields;
 }
 
-function parseLabelsCsv(text: string) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length === 0) return { scientific: [], common: [] };
+/**
+ * Parses the BirdNET labels CSV file.
+ * Extracts scientific and common names for each species.
+ *
+ * @param csvText - Raw CSV content
+ * @returns Object with scientific and common name arrays
+ */
+function parseLabelsCsv(csvText: string): {
+  scientific: string[];
+  common: string[];
+} {
+  const lines = csvText.trim().split(/\r?\n/);
+  if (lines.length === 0) {
+    return { scientific: [], common: [] };
+  }
+
+  // Parse header to find column indices
   const header = parseCsvLine(lines[0], ";");
   const sciIndex = header.indexOf("sci_name");
   const comIndex = header.indexOf("com_name");
+
   const scientific: string[] = [];
   const common: string[] = [];
-  for (let i = 1; i < lines.length; i += 1) {
+
+  // Parse data rows
+  for (let i = 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i], ";");
     const sci = (cols[sciIndex] || "").trim();
     const com = (cols[comIndex] || "").trim();
+
     if (sci || com) {
       scientific.push(sci);
       common.push(com);
     }
   }
+
   return { scientific, common };
 }
 
-async function loadLabelsFromUrl(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch labels: ${res.status}`);
+/**
+ * Fetches and parses labels from a URL.
+ *
+ * @param url - URL to labels CSV file
+ * @returns Parsed scientific and common names
+ */
+async function loadLabelsFromUrl(url: string): Promise<{
+  scientific: string[];
+  common: string[];
+}> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch labels: ${response.status}`);
   }
-  const text = await res.text();
+  const text = await response.text();
   return parseLabelsCsv(text);
 }
 
-async function loadModelSession(source: string | ArrayBuffer) {
-  // Try WebGL first, fall back to WASM
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createSession = (s: any, providers: string[]) =>
-    ort.InferenceSession.create(s, {
+// -----------------------------------------------------------------------------
+// Model Loading
+// -----------------------------------------------------------------------------
+
+/**
+ * Loads an ONNX inference session with preferred execution provider.
+ * Tries WebGL (GPU) first for best performance, falls back to WASM (CPU).
+ *
+ * @param source - Model URL or ArrayBuffer
+ * @returns Session and provider info
+ */
+async function loadModelSession(
+  source: string | ArrayBuffer
+): Promise<{
+  session: ort.InferenceSession;
+  provider: "webgl" | "wasm";
+}> {
+  // Convert ArrayBuffer to Uint8Array (ONNX runtime expects Uint8Array for binary data)
+  const modelData: string | Uint8Array =
+    typeof source === "string" ? source : new Uint8Array(source);
+
+  // Note: ONNX Runtime types are overly strict - the API actually accepts string URLs
+  // Using type assertion to work around incomplete type definitions
+  const createSession = (data: string | Uint8Array, providers: string[]) =>
+    ort.InferenceSession.create(data as Parameters<typeof ort.InferenceSession.create>[0], {
       executionProviders: providers,
       graphOptimizationLevel: "all"
     });
 
+  // Try WebGL first (GPU acceleration)
   try {
-    const webglSession = await createSession(source, ["webgl"]);
-    return { session: webglSession, provider: "webgl" as const };
+    const webglSession = await createSession(modelData, ["webgl"]);
+    return { session: webglSession, provider: "webgl" };
   } catch {
-    const wasmSession = await createSession(source, ["wasm"]);
-    return { session: wasmSession, provider: "wasm" as const };
+    // Fall back to WASM (CPU)
+    const wasmSession = await createSession(modelData, ["wasm"]);
+    return { session: wasmSession, provider: "wasm" };
   }
 }
 
-function chunkAudioPlan(
-  audioData: Float32Array,
+// -----------------------------------------------------------------------------
+// Audio Chunking
+// -----------------------------------------------------------------------------
+
+/**
+ * Plans how to split audio into overlapping chunks for inference.
+ * BirdNET processes audio in fixed-length segments (default 3s).
+ *
+ * @param audioLength - Total audio samples
+ * @param chunkLengthSec - Chunk duration in seconds
+ * @param overlapSec - Overlap between chunks in seconds
+ * @param sampleRate - Audio sample rate
+ * @returns Chunk start positions and time spans
+ */
+function planAudioChunks(
+  audioLength: number,
   chunkLengthSec: number,
   overlapSec: number,
   sampleRate: number
-) {
+): {
+  starts: number[];
+  spans: [number, number][];
+  chunkSamples: number;
+} {
   const chunkSamples = Math.floor(chunkLengthSec * sampleRate);
-  const hopSamples = Math.max(1, Math.floor((chunkLengthSec - overlapSec) * sampleRate));
+  const hopSamples = Math.max(
+    1,
+    Math.floor((chunkLengthSec - overlapSec) * sampleRate)
+  );
+
   const starts: number[] = [];
   const spans: [number, number][] = [];
-  for (let i = 0; i + chunkSamples <= audioData.length; i += hopSamples) {
+
+  for (let i = 0; i + chunkSamples <= audioLength; i += hopSamples) {
     starts.push(i);
     spans.push([i / sampleRate, (i + chunkSamples) / sampleRate]);
   }
+
   return { starts, spans, chunkSamples };
 }
 
-function pickPredictionTensor(outputs: Record<string, ort.Tensor>, labelCount: number) {
+/**
+ * Finds the appropriate output tensor from model results.
+ * Different ONNX exports may have different output names.
+ *
+ * @param outputs - Model output tensors
+ * @param labelCount - Expected number of species labels
+ * @returns The prediction tensor
+ */
+function findPredictionTensor(
+  outputs: Record<string, ort.Tensor>,
+  labelCount: number
+): ort.Tensor {
   const tensors = Object.values(outputs);
-  const byLabelCount = tensors.find((t) => t.dims?.length === 2 && t.dims[1] === labelCount);
+
+  // Look for tensor with expected shape [batch, num_species]
+  const byLabelCount = tensors.find(
+    (t) => t.dims?.length === 2 && t.dims[1] === labelCount
+  );
+
   if (byLabelCount) return byLabelCount;
+
+  // Fall back to first tensor
   return tensors[0];
 }
 
-async function handleLoadModel(msg: MessageLoadModel) {
+// -----------------------------------------------------------------------------
+// Message Handlers
+// -----------------------------------------------------------------------------
+
+/**
+ * Handles model loading request from main thread.
+ * Loads labels and ONNX model, reports success/failure.
+ */
+async function handleLoadModel(msg: MessageLoadModel): Promise<void> {
   try {
-    // Load labels
+    // Load species labels
     if (msg.labelsText) {
       const parsed = parseLabelsCsv(msg.labelsText);
       labelScientific = parsed.scientific;
@@ -145,10 +264,10 @@ async function handleLoadModel(msg: MessageLoadModel) {
     }
 
     if (!labelScientific.length) {
-      throw new Error("No labels parsed from CSV.");
+      throw new Error("No labels parsed from CSV");
     }
 
-    // Load model
+    // Load ONNX model
     let source: string | ArrayBuffer;
     if (msg.modelBuffer) {
       source = msg.modelBuffer;
@@ -161,6 +280,7 @@ async function handleLoadModel(msg: MessageLoadModel) {
     const result = await loadModelSession(source);
     session = result.session;
 
+    // Report success
     self.postMessage({
       type: "loadModelResult",
       id: msg.id,
@@ -169,9 +289,11 @@ async function handleLoadModel(msg: MessageLoadModel) {
       labelCount: labelScientific.length
     });
   } catch (err) {
+    // Reset state on failure
     session = null;
     labelScientific = [];
     labelCommon = [];
+
     self.postMessage({
       type: "loadModelResult",
       id: msg.id,
@@ -181,7 +303,11 @@ async function handleLoadModel(msg: MessageLoadModel) {
   }
 }
 
-async function handleRunInference(msg: MessageRunInference) {
+/**
+ * Handles inference request from main thread.
+ * Processes audio in batched chunks and streams progress updates.
+ */
+async function handleRunInference(msg: MessageRunInference): Promise<void> {
   if (!session) {
     self.postMessage({
       type: "inferenceResult",
@@ -194,8 +320,16 @@ async function handleRunInference(msg: MessageRunInference) {
 
   try {
     const { audioData, chunkLength, overlap, batchSize, minConf, sampleRate } = msg;
-    const { starts, spans, chunkSamples } = chunkAudioPlan(audioData, chunkLength, overlap, sampleRate);
 
+    // Plan chunk positions
+    const { starts, spans, chunkSamples } = planAudioChunks(
+      audioData.length,
+      chunkLength,
+      overlap,
+      sampleRate
+    );
+
+    // Handle edge case: audio shorter than one chunk
     if (!starts.length) {
       self.postMessage({
         type: "inferenceResult",
@@ -208,26 +342,28 @@ async function handleRunInference(msg: MessageRunInference) {
     }
 
     const labelCount = labelScientific.length;
-    const audioLen = audioData.length;
     const detections: DetectionRow[] = [];
     const startTime = performance.now();
 
+    // Process chunks in batches
     for (let i = 0; i < starts.length; i += batchSize) {
       const batchCount = Math.min(batchSize, starts.length - i);
-      const input = new Float32Array(batchCount * chunkSamples);
 
-      for (let b = 0; b < batchCount; b += 1) {
+      // Prepare input tensor: [batchCount, chunkSamples]
+      const input = new Float32Array(batchCount * chunkSamples);
+      for (let b = 0; b < batchCount; b++) {
         const startSample = starts[i + b];
-        const endSample = Math.min(startSample + chunkSamples, audioLen);
+        const endSample = Math.min(startSample + chunkSamples, audioData.length);
         input.set(audioData.subarray(startSample, endSample), b * chunkSamples);
       }
 
+      // Create ONNX tensor and run inference
       const tensor = new ort.Tensor("float32", input, [batchCount, chunkSamples]);
       const feeds: Record<string, ort.Tensor> = {
         [session.inputNames[0]]: tensor
       };
 
-      // Report progress
+      // Report progress to main thread
       self.postMessage({
         type: "inferenceProgress",
         id: msg.id,
@@ -235,32 +371,41 @@ async function handleRunInference(msg: MessageRunInference) {
         total: starts.length
       });
 
+      // Run model
       const results = await session.run(feeds);
-      const predTensor = pickPredictionTensor(results, labelCount);
-      const preds = predTensor.data as Float32Array;
-      const outDim = predTensor.dims?.[1] || labelCount;
+      const predTensor = findPredictionTensor(results, labelCount);
+      const predictions = predTensor.data as Float32Array;
+      const outputDim = predTensor.dims?.[1] || labelCount;
 
-      for (let b = 0; b < batchCount; b += 1) {
-        const offset = b * outDim;
+      // Extract detections above threshold
+      for (let b = 0; b < batchCount; b++) {
+        const offset = b * outputDim;
         const [start, end] = spans[i + b];
-        for (let c = 0; c < labelCount; c += 1) {
-          const val = preds[offset + c];
-          if (val >= minConf) {
+
+        for (let c = 0; c < labelCount; c++) {
+          const confidence = predictions[offset + c];
+          if (confidence >= minConf) {
             detections.push({
               start,
               end,
               scientific: labelScientific[c] || "",
               common: labelCommon[c] || "",
-              confidence: val
+              confidence
             });
           }
         }
       }
     }
 
+    // Calculate total inference time
     const duration = (performance.now() - startTime) / 1000;
-    detections.sort((a, b) => (a.start === b.start ? b.confidence - a.confidence : a.start - b.start));
 
+    // Sort by time, then by confidence (for same-time detections)
+    detections.sort((a, b) =>
+      a.start === b.start ? b.confidence - a.confidence : a.start - b.start
+    );
+
+    // Report results
     self.postMessage({
       type: "inferenceResult",
       id: msg.id,
@@ -278,8 +423,16 @@ async function handleRunInference(msg: MessageRunInference) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Message Router
+// -----------------------------------------------------------------------------
+
+/**
+ * Main message handler - routes incoming messages to appropriate handler.
+ */
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const msg = event.data;
+
   switch (msg.type) {
     case "loadModel":
       await handleLoadModel(msg);
@@ -287,5 +440,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     case "runInference":
       await handleRunInference(msg);
       break;
+    default:
+      console.warn("Unknown worker message type:", (msg as { type: string }).type);
   }
 };

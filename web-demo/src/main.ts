@@ -1,79 +1,164 @@
+/**
+ * BirdNET+ Web Demo - Main Application
+ *
+ * This is the entry point for the BirdNET+ web-based bird sound identification demo.
+ * It handles:
+ * - Audio file upload and decoding
+ * - Spectrogram visualization
+ * - Model loading and inference (via web worker)
+ * - Results display and export
+ *
+ * Architecture:
+ * - Audio processing and spectrogram: runs on main thread
+ * - Model inference: offloaded to web worker to prevent UI freezing
+ */
+
 import "./style.css";
-import FFT from "fft.js";
+
+// Local modules
+import { SAMPLE_RATE } from "./constants";
+import { decodeAudioFile, formatTime } from "./audio";
+import { renderSpectrogram } from "./spectrogram";
+import type { DetectionRow, WorkerLoadModelResult, WorkerInferenceResult } from "./types";
+
+// Web worker for inference (loaded via Vite's worker import)
 import InferenceWorker from "./inference.worker.ts?worker";
 
-const SR = 32000;
-const N_FFT = 2048;
-const HOP = 512;
+// -----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
+
+/** Default paths for model and labels (relative to public folder) */
+const MODEL_URL_DEFAULT = "/assets/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx";
+const LABELS_URL_DEFAULT = "/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv";
+
+/** Maximum rows to display in detection table (for performance) */
 const MAX_TABLE_ROWS = 500;
-const DYNAMIC_RANGE_DB = 80;
 
-const MODEL_URL_DEFAULT =
-  "/assets/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx";
-const LABELS_URL_DEFAULT =
-  "/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv";
+// -----------------------------------------------------------------------------
+// DOM Elements
+// -----------------------------------------------------------------------------
 
-const $ = <T extends HTMLElement>(id: string) =>
+/**
+ * Helper to safely get DOM element by ID with type casting.
+ * Returns null if element not found (caller should handle).
+ */
+const $ = <T extends HTMLElement>(id: string): T | null =>
   document.getElementById(id) as T | null;
 
+/**
+ * All DOM elements used by the application.
+ * Centralized here for easy reference and type safety.
+ */
 const elements = {
-  appShell: $("app-shell") as HTMLDivElement,
-  modelStatus: $("model-status") as HTMLSpanElement,
-  providerStatus: $("provider-status") as HTMLSpanElement,
-  audioFile: $("audio-file") as HTMLInputElement,
-  audioMeta: $("audio-meta") as HTMLSpanElement,
-  dropzone: $("dropzone") as HTMLDivElement,
-  spectrogram: $("spectrogram") as HTMLCanvasElement,
-  spectrogramSection: $("spectrogram-section") as HTMLDivElement,
-  resultsSection: $("results-section") as HTMLDivElement,
-  chunkLength: $("chunk-length") as HTMLInputElement,
-  overlap: $("overlap") as HTMLInputElement,
-  batchSize: $("batch-size") as HTMLInputElement,
-  minConf: $("min-conf") as HTMLInputElement,
-  modelUrl: $("model-url") as HTMLInputElement,
-  labelsUrl: $("labels-url") as HTMLInputElement,
-  localModel: $("local-model") as HTMLInputElement,
-  localLabels: $("local-labels") as HTMLInputElement,
-  runInferenceBtn: $("run-inference") as HTMLButtonElement,
-  runStatus: $("run-status") as HTMLParagraphElement,
-  detectionsTable: $("detections-table") as HTMLTableElement,
-  detectionsNote: $("detections-note") as HTMLParagraphElement,
-  downloadCsv: $("download-csv") as HTMLButtonElement,
-  audioControls: $("audio-controls") as HTMLDivElement,
-  audioPlayer: $("audio-player") as HTMLAudioElement,
-  audioTime: $("audio-time") as HTMLSpanElement,
-  segmentStatus: $("segment-status") as HTMLSpanElement
+  // Status indicators
+  modelStatus: $<HTMLSpanElement>("model-status")!,
+  providerStatus: $<HTMLSpanElement>("provider-status")!,
+  runStatus: $<HTMLParagraphElement>("run-status")!,
+  segmentStatus: $<HTMLSpanElement>("segment-status")!,
+
+  // Audio input
+  audioFile: $<HTMLInputElement>("audio-file")!,
+  audioMeta: $<HTMLSpanElement>("audio-meta")!,
+  dropzone: $<HTMLDivElement>("dropzone")!,
+
+  // Visualization
+  spectrogram: $<HTMLCanvasElement>("spectrogram")!,
+  spectrogramSection: $<HTMLDivElement>("spectrogram-section")!,
+
+  // Audio playback
+  audioControls: $<HTMLDivElement>("audio-controls")!,
+  audioPlayer: $<HTMLAudioElement>("audio-player")!,
+  audioTime: $<HTMLSpanElement>("audio-time")!,
+
+  // Model settings
+  chunkLength: $<HTMLInputElement>("chunk-length")!,
+  overlap: $<HTMLInputElement>("overlap")!,
+  batchSize: $<HTMLInputElement>("batch-size")!,
+  minConf: $<HTMLInputElement>("min-conf")!,
+  modelUrl: $<HTMLInputElement>("model-url")!,
+  labelsUrl: $<HTMLInputElement>("labels-url")!,
+  localModel: $<HTMLInputElement>("local-model")!,
+  localLabels: $<HTMLInputElement>("local-labels")!,
+
+  // Results
+  resultsSection: $<HTMLDivElement>("results-section")!,
+  detectionsTable: $<HTMLTableElement>("detections-table")!,
+  detectionsNote: $<HTMLParagraphElement>("detections-note")!,
+
+  // Action buttons
+  runInferenceBtn: $<HTMLButtonElement>("run-inference")!,
+  downloadCsv: $<HTMLButtonElement>("download-csv")!
 };
 
-if (!elements.runInferenceBtn) {
-  throw new Error("Required DOM elements missing");
+// Verify critical elements exist
+if (!elements.runInferenceBtn || !elements.dropzone) {
+  throw new Error("Required DOM elements missing - check HTML structure");
 }
 
+// -----------------------------------------------------------------------------
+// Application State
+// -----------------------------------------------------------------------------
+
+/** Current audio data (mono Float32Array at 32kHz) */
 let audioData: Float32Array | null = null;
+
+/** Duration of current audio in seconds */
 let audioDuration = 0;
+
+/** Object URL for current audio file (for playback) */
+let audioObjectUrl: string | null = null;
+
+/** Whether the ONNX model is loaded and ready */
 let modelReady = false;
+
+/** Whether model is currently being loaded */
 let modelLoading = false;
+
+/** Last generated CSV for download */
 let lastDetectionsCsv = "";
-let audioUrl: string | null = null;
-let segmentEnd: number | null = null;
+
+/** End time for segment playback (null if not playing segment) */
+let segmentEndTime: number | null = null;
+
+/** Currently highlighted table row during segment playback */
 let activeSegmentRow: HTMLTableRowElement | null = null;
-let workerMsgId = 0;
 
-// Initialize web worker for inference
+// -----------------------------------------------------------------------------
+// Web Worker Communication
+// -----------------------------------------------------------------------------
+
+/** Counter for generating unique message IDs */
+let workerMessageId = 0;
+
+/** Initialize the inference worker */
 const inferenceWorker = new InferenceWorker();
-const pendingWorkerCalls = new Map<number, {
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
-  onProgress?: (current: number, total: number) => void;
-}>();
 
+/**
+ * Pending worker calls waiting for responses.
+ * Maps message ID to resolve/reject callbacks.
+ */
+const pendingWorkerCalls = new Map<
+  number,
+  {
+    resolve: (value: unknown) => void;
+    reject: (reason: unknown) => void;
+    onProgress?: (current: number, total: number) => void;
+  }
+>();
+
+// Handle messages from worker
 inferenceWorker.onmessage = (event: MessageEvent) => {
   const msg = event.data;
+
+  // Handle progress updates (don't resolve promise yet)
   if (msg.type === "inferenceProgress" && pendingWorkerCalls.has(msg.id)) {
     const call = pendingWorkerCalls.get(msg.id)!;
     call.onProgress?.(msg.current, msg.total);
     return;
   }
+
+  // Handle final responses
   if (pendingWorkerCalls.has(msg.id)) {
     const call = pendingWorkerCalls.get(msg.id)!;
     pendingWorkerCalls.delete(msg.id);
@@ -81,63 +166,89 @@ inferenceWorker.onmessage = (event: MessageEvent) => {
   }
 };
 
+// Log worker errors for debugging
 inferenceWorker.onerror = (err: ErrorEvent) => {
-  console.error("Worker error:", err);
+  console.error("Inference worker error:", err);
 };
 
+/**
+ * Sends a message to the worker and returns a promise that resolves
+ * when the worker responds.
+ *
+ * @param message - Message payload to send
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to worker response
+ */
 function callWorker<T>(
   message: Record<string, unknown>,
   onProgress?: (current: number, total: number) => void
 ): Promise<T> {
-  const id = ++workerMsgId;
+  const id = ++workerMessageId;
   return new Promise((resolve, reject) => {
-    pendingWorkerCalls.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress });
+    pendingWorkerCalls.set(id, {
+      resolve: resolve as (v: unknown) => void,
+      reject,
+      onProgress
+    });
     inferenceWorker.postMessage({ ...message, id });
   });
 }
 
-function setStatus(text: string) {
+// -----------------------------------------------------------------------------
+// UI Updates
+// -----------------------------------------------------------------------------
+
+/** Updates the main status message below the run button */
+function setStatus(text: string): void {
   elements.runStatus.textContent = text;
 }
 
-function setSegmentStatus(text: string) {
+/** Updates the segment playback status text */
+function setSegmentStatus(text: string): void {
   elements.segmentStatus.textContent = text;
 }
 
-function setModelStatus(text: string, ok: boolean) {
+/** Updates the model status pill (loaded/not loaded) */
+function setModelStatus(text: string, isOk: boolean): void {
   elements.modelStatus.textContent = text;
-  elements.modelStatus.classList.toggle("status-pill--ok", ok);
-  elements.modelStatus.classList.toggle("status-pill--bad", !ok);
+  elements.modelStatus.classList.toggle("status-pill--ok", isOk);
+  elements.modelStatus.classList.toggle("status-pill--bad", !isOk);
 }
 
-function setProviderStatus(text: string, level: "ok" | "warn") {
+/** Updates the execution provider status pill (WebGL/WASM) */
+function setProviderStatus(text: string, level: "ok" | "warn"): void {
   elements.providerStatus.textContent = text;
   elements.providerStatus.classList.toggle("status-pill--ok", level === "ok");
   elements.providerStatus.classList.toggle("status-pill--warn", level === "warn");
 }
 
-function bytesToSize(bytes: number) {
+/** Formats bytes as human-readable size (KB, MB) */
+function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatTime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
-  const total = Math.floor(seconds);
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
-
-function updateAudioTime() {
+/** Updates the audio time display (current / total) */
+function updateAudioTimeDisplay(): void {
   const current = elements.audioPlayer.currentTime || 0;
-  const duration = elements.audioPlayer.duration || audioDuration || 0;
-  elements.audioTime.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+  const total = elements.audioPlayer.duration || audioDuration || 0;
+  elements.audioTime.textContent = `${formatTime(current)} / ${formatTime(total)}`;
 }
 
-function clearSegmentPlayback() {
-  segmentEnd = null;
+/** Enables/disables the run button based on state */
+function updateRunButton(): void {
+  const canRun = !!audioData && !modelLoading;
+  elements.runInferenceBtn.disabled = !canRun;
+}
+
+// -----------------------------------------------------------------------------
+// Segment Playback
+// -----------------------------------------------------------------------------
+
+/** Clears segment playback state and resets UI */
+function clearSegmentPlayback(): void {
+  segmentEndTime = null;
   setSegmentStatus("");
   if (activeSegmentRow) {
     activeSegmentRow.classList.remove("table-row--active");
@@ -145,14 +256,31 @@ function clearSegmentPlayback() {
   }
 }
 
-function playSegment(start: number, end: number, row?: HTMLTableRowElement) {
+/**
+ * Plays a specific time segment of the audio.
+ * Used when clicking on detection table rows.
+ *
+ * @param start - Start time in seconds
+ * @param end - End time in seconds
+ * @param row - Optional table row to highlight
+ */
+function playSegment(
+  start: number,
+  end: number,
+  row?: HTMLTableRowElement
+): void {
   if (!elements.audioPlayer.src) return;
+
   const clampedStart = Math.max(0, start);
   const clampedEnd = Math.max(clampedStart, end);
-  segmentEnd = clampedEnd;
+
+  segmentEndTime = clampedEnd;
   elements.audioPlayer.currentTime = clampedStart;
   elements.audioPlayer.play();
+
   setSegmentStatus(`Playing ${clampedStart.toFixed(2)}s - ${clampedEnd.toFixed(2)}s`);
+
+  // Update row highlighting
   if (activeSegmentRow && activeSegmentRow !== row) {
     activeSegmentRow.classList.remove("table-row--active");
   }
@@ -162,104 +290,93 @@ function playSegment(start: number, end: number, row?: HTMLTableRowElement) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Results Table
+// -----------------------------------------------------------------------------
 
-async function decodeAudio(file: File): Promise<Float32Array> {
-  const arrayBuffer = await file.arrayBuffer();
-  const context = new AudioContext();
-  const buffer = await context.decodeAudioData(arrayBuffer.slice(0));
-  const channelData = mixToMono(buffer);
-  const resampled = resampleLinear(channelData, buffer.sampleRate, SR);
-  audioDuration = resampled.length / SR;
-  await context.close();
-  return resampled;
-}
+/**
+ * Renders detection results to the HTML table.
+ * Limits rows for performance and updates count display.
+ *
+ * @param detections - Array of detection results to display
+ */
+function renderDetectionsTable(detections: DetectionRow[]): void {
+  const tbody = elements.detectionsTable.querySelector("tbody");
+  if (!tbody) return;
 
-function mixToMono(buffer: AudioBuffer): Float32Array {
-  if (buffer.numberOfChannels === 1) {
-    return buffer.getChannelData(0).slice();
-  }
-  const length = buffer.length;
-  const mix = new Float32Array(length);
-  for (let c = 0; c < buffer.numberOfChannels; c += 1) {
-    const data = buffer.getChannelData(c);
-    for (let i = 0; i < length; i += 1) {
-      mix[i] += data[i] / buffer.numberOfChannels;
-    }
-  }
-  return mix;
-}
-
-function resampleLinear(input: Float32Array, srcSr: number, targetSr: number) {
-  if (srcSr === targetSr) return input;
-  const ratio = srcSr / targetSr;
-  const newLength = Math.max(1, Math.round(input.length / ratio));
-  const output = new Float32Array(newLength);
-  for (let i = 0; i < newLength; i += 1) {
-    const srcIndex = i * ratio;
-    const i0 = Math.floor(srcIndex);
-    const i1 = Math.min(i0 + 1, input.length - 1);
-    const frac = srcIndex - i0;
-    output[i] = input[i0] * (1 - frac) + input[i1] * frac;
-  }
-  return output;
-}
-
-
-function renderDetectionsTable(rows: DetectionRow[]) {
-  const tbody = elements.detectionsTable.querySelector("tbody") as HTMLTableSectionElement;
   tbody.innerHTML = "";
   const fragment = document.createDocumentFragment();
-  const limit = Math.min(rows.length, MAX_TABLE_ROWS);
-  for (let i = 0; i < limit; i += 1) {
-    const row = rows[i];
+  const limit = Math.min(detections.length, MAX_TABLE_ROWS);
+
+  for (let i = 0; i < limit; i++) {
+    const detection = detections[i];
     const tr = document.createElement("tr");
     tr.classList.add("table-row");
     tr.tabIndex = 0;
     tr.setAttribute("role", "button");
-    tr.setAttribute("aria-label", `Play ${row.start.toFixed(2)} to ${row.end.toFixed(2)} seconds`);
-    tr.dataset.start = row.start.toString();
-    tr.dataset.end = row.end.toString();
+    tr.setAttribute(
+      "aria-label",
+      `Play ${detection.start.toFixed(2)} to ${detection.end.toFixed(2)} seconds`
+    );
+    tr.dataset.start = detection.start.toString();
+    tr.dataset.end = detection.end.toString();
     tr.innerHTML = `
-      <td>${row.start.toFixed(3)}</td>
-      <td>${row.end.toFixed(3)}</td>
-      <td>${row.scientific}</td>
-      <td>${row.common}</td>
-      <td>${row.confidence.toFixed(3)}</td>
+      <td>${detection.start.toFixed(3)}</td>
+      <td>${detection.end.toFixed(3)}</td>
+      <td>${detection.scientific}</td>
+      <td>${detection.common}</td>
+      <td>${detection.confidence.toFixed(3)}</td>
     `;
     fragment.appendChild(tr);
   }
+
   tbody.appendChild(fragment);
-  if (rows.length > MAX_TABLE_ROWS) {
+
+  // Update note showing total count
+  if (detections.length > MAX_TABLE_ROWS) {
     elements.detectionsNote.textContent =
-      `Showing ${MAX_TABLE_ROWS} of ${rows.length} detections. ` +
+      `Showing ${MAX_TABLE_ROWS} of ${detections.length} detections. ` +
       "Increase min confidence to reduce rows.";
   } else {
-    elements.detectionsNote.textContent = rows.length
-      ? `${rows.length} detections`
+    elements.detectionsNote.textContent = detections.length
+      ? `${detections.length} detections`
       : "No detections above threshold.";
   }
 }
 
-function buildDetectionsCsv(rows: DetectionRow[]) {
+/**
+ * Converts detection results to CSV format.
+ *
+ * @param detections - Array of detection results
+ * @returns CSV string with header row
+ */
+function buildDetectionsCsv(detections: DetectionRow[]): string {
   const header = ["start_sec", "end_sec", "scientific_name", "common_name", "confidence"];
   const lines = [header.join(",")];
-  for (const row of rows) {
+
+  for (const detection of detections) {
     lines.push(
       [
-        row.start.toFixed(3),
-        row.end.toFixed(3),
-        row.scientific,
-        row.common,
-        row.confidence.toFixed(6)
+        detection.start.toFixed(3),
+        detection.end.toFixed(3),
+        detection.scientific,
+        detection.common,
+        detection.confidence.toFixed(6)
       ].join(",")
     );
   }
+
   return lines.join("\n");
 }
 
-
-function downloadText(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/plain" });
+/**
+ * Triggers a file download with the given content.
+ *
+ * @param filename - Name for the downloaded file
+ * @param content - File content as string
+ */
+function downloadTextFile(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -268,43 +385,43 @@ function downloadText(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-function updateRunButton() {
-  const ready = !!audioData && !modelLoading;
-  elements.runInferenceBtn.disabled = !ready;
-}
+// -----------------------------------------------------------------------------
+// Model Loading
+// -----------------------------------------------------------------------------
 
-async function handleLoadModel() {
+/**
+ * Loads the ONNX model and species labels into the inference worker.
+ * Supports both remote URLs and local file uploads.
+ */
+async function loadModel(): Promise<void> {
   if (modelLoading) return;
+
   try {
     modelLoading = true;
     updateRunButton();
     setStatus("Loading model...");
     setModelStatus("Loading model...", false);
 
+    // Check if user provided local files
     const localModel = elements.localModel.files?.[0] || null;
     const localLabels = elements.localLabels.files?.[0] || null;
 
-    type LoadModelResult = {
-      type: string;
-      success: boolean;
-      provider?: "webgl" | "wasm";
-      labelCount?: number;
-      error?: string;
-    };
+    let result: WorkerLoadModelResult;
 
-    let result: LoadModelResult;
     if (localModel && localLabels) {
+      // Load from local files
       const modelBuffer = await localModel.arrayBuffer();
       const labelsText = await localLabels.text();
-      result = await callWorker<LoadModelResult>({
+      result = await callWorker<WorkerLoadModelResult>({
         type: "loadModel",
         modelBuffer,
         labelsText
       });
     } else {
+      // Load from URLs
       const modelUrl = elements.modelUrl.value || MODEL_URL_DEFAULT;
       const labelsUrl = elements.labelsUrl.value || LABELS_URL_DEFAULT;
-      result = await callWorker<LoadModelResult>({
+      result = await callWorker<WorkerLoadModelResult>({
         type: "loadModel",
         modelUrl,
         labelsUrl
@@ -314,6 +431,8 @@ async function handleLoadModel() {
     if (result.success) {
       modelReady = true;
       setModelStatus("Model ready", true);
+
+      // Show which execution provider was used
       if (result.provider === "webgl") {
         setProviderStatus("Provider: WebGL", "ok");
       } else {
@@ -326,22 +445,24 @@ async function handleLoadModel() {
     modelReady = false;
     setModelStatus("Failed to load model", false);
     setStatus((err as Error).message);
+  } finally {
+    modelLoading = false;
+    updateRunButton();
   }
-  modelLoading = false;
-  updateRunButton();
 }
 
-type DetectionRow = {
-  start: number;
-  end: number;
-  scientific: string;
-  common: string;
-  confidence: number;
-};
+// -----------------------------------------------------------------------------
+// Inference
+// -----------------------------------------------------------------------------
 
-async function runInference() {
+/**
+ * Runs inference on the loaded audio data using parameters from UI.
+ * Shows progress updates during processing.
+ */
+async function runInference(): Promise<void> {
   if (!modelReady || !audioData) return;
 
+  // Get parameters from UI controls
   const chunkLength = Number(elements.chunkLength.value);
   const overlap = Number(elements.overlap.value);
   const batchSize = Number(elements.batchSize.value);
@@ -349,15 +470,8 @@ async function runInference() {
 
   setStatus("Running inference...");
 
-  type InferenceResult = {
-    type: string;
-    success: boolean;
-    detections?: DetectionRow[];
-    duration?: number;
-    error?: string;
-  };
-
-  const result = await callWorker<InferenceResult>(
+  // Call worker with progress callback
+  const result = await callWorker<WorkerInferenceResult>(
     {
       type: "runInference",
       audioData,
@@ -365,7 +479,7 @@ async function runInference() {
       overlap,
       batchSize,
       minConf,
-      sampleRate: SR
+      sampleRate: SAMPLE_RATE
     },
     (current, total) => {
       setStatus(`Running inference... ${current}/${total}`);
@@ -377,6 +491,7 @@ async function runInference() {
     return;
   }
 
+  // Show results
   const detections = result.detections || [];
   const duration = result.duration?.toFixed(2) || "0";
   setStatus(`Inference complete in ${duration}s. Audio duration ${audioDuration.toFixed(2)}s.`);
@@ -384,175 +499,69 @@ async function runInference() {
   renderDetectionsTable(detections);
   elements.resultsSection.classList.remove("hidden");
 
+  // Prepare CSV for download
   lastDetectionsCsv = buildDetectionsCsv(detections);
   elements.downloadCsv.disabled = detections.length === 0;
 }
 
-function renderSpectrogram(y: Float32Array) {
-  const canvas = elements.spectrogram;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const spectrogram = computeLinearSpectrogram(y);
-  const height = spectrogram.length;
-  const width = spectrogram[0]?.length || 0;
-  if (width === 0) return;
+// -----------------------------------------------------------------------------
+// Audio File Handling
+// -----------------------------------------------------------------------------
 
-  // Gather all values for percentile-based normalization
-  const allVals: number[] = [];
-  for (const row of spectrogram) {
-    for (const v of row) {
-      allVals.push(v);
-    }
-  }
-  allVals.sort((a, b) => a - b);
-
-  // Use percentiles for robust min/max (ignore outliers)
-  const pLow = Math.floor(allVals.length * 0.02);
-  const pHigh = Math.floor(allVals.length * 0.98);
-  const minDb = allVals[pLow];
-  const maxDb = allVals[pHigh];
-  const rangeDb = Math.max(maxDb - minDb, DYNAMIC_RANGE_DB);
-
-  // Create image at native resolution then scale up
-  const nativeImage = ctx.createImageData(width, height);
-  for (let yIdx = 0; yIdx < height; yIdx += 1) {
-    const srcRow = height - 1 - yIdx; // Flip vertically
-    for (let xIdx = 0; xIdx < width; xIdx += 1) {
-      const value = spectrogram[srcRow][xIdx];
-      let norm = (value - minDb) / rangeDb;
-      norm = Math.min(1, Math.max(0, norm));
-      // Gamma correction for better mid-tone visibility
-      norm = Math.pow(norm, 0.75);
-      const idx = (yIdx * width + xIdx) * 4;
-      const color = colorMap(norm);
-      nativeImage.data[idx] = color[0];
-      nativeImage.data[idx + 1] = color[1];
-      nativeImage.data[idx + 2] = color[2];
-      nativeImage.data[idx + 3] = 255;
-    }
-  }
-
-  // Render at fixed display size with smooth scaling
-  const displayWidth = 900;
-  const displayHeight = 200;
-  canvas.width = displayWidth;
-  canvas.height = displayHeight;
-
-  const tmpCanvas = document.createElement("canvas");
-  tmpCanvas.width = width;
-  tmpCanvas.height = height;
-  tmpCanvas.getContext("2d")!.putImageData(nativeImage, 0, 0);
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(tmpCanvas, 0, 0, displayWidth, displayHeight);
-}
-
-function colorMap(t: number): [number, number, number] {
-  const clamped = Math.min(1, Math.max(0, t));
-  const stops = [
-    { t: 0.0, c: [68, 1, 84] },
-    { t: 0.13, c: [71, 44, 122] },
-    { t: 0.25, c: [59, 81, 139] },
-    { t: 0.38, c: [44, 113, 142] },
-    { t: 0.5, c: [33, 145, 140] },
-    { t: 0.63, c: [39, 173, 129] },
-    { t: 0.75, c: [92, 200, 99] },
-    { t: 0.88, c: [170, 220, 50] },
-    { t: 1.0, c: [253, 231, 37] }
-  ];
-  for (let i = 0; i < stops.length - 1; i += 1) {
-    const a = stops[i];
-    const b = stops[i + 1];
-    if (clamped >= a.t && clamped <= b.t) {
-      const local = (clamped - a.t) / (b.t - a.t);
-      return [
-        Math.round(a.c[0] + (b.c[0] - a.c[0]) * local),
-        Math.round(a.c[1] + (b.c[1] - a.c[1]) * local),
-        Math.round(a.c[2] + (b.c[2] - a.c[2]) * local)
-      ];
-    }
-  }
-  const last = stops[stops.length - 1].c;
-  return [last[0], last[1], last[2]];
-}
-
-function computeLinearSpectrogram(y: Float32Array) {
-  // Pre-emphasis to boost high frequencies (common for speech/bird sounds)
-  const preEmph = 0.97;
-  const emphasized = new Float32Array(y.length);
-  emphasized[0] = y[0];
-  for (let i = 1; i < y.length; i += 1) {
-    emphasized[i] = y[i] - preEmph * y[i - 1];
-  }
-
-  const fft = new FFT(N_FFT);
-  const window = hannWindow(N_FFT);
-  const frames = Math.floor((emphasized.length - N_FFT) / HOP) + 1;
-  const nBins = Math.floor(N_FFT / 2) + 1;
-  const spectrogram: number[][] = Array.from({ length: nBins }, () => new Array(frames).fill(0));
-  const eps = 1e-10;
-
-  const input = fft.createComplexArray();
-  const output = fft.createComplexArray();
-
-  for (let i = 0; i < frames; i += 1) {
-    const offset = i * HOP;
-    for (let j = 0; j < N_FFT; j += 1) {
-      input[2 * j] = (emphasized[offset + j] || 0) * window[j];
-      input[2 * j + 1] = 0;
-    }
-    fft.transform(output, input);
-    for (let k = 0; k < nBins; k += 1) {
-      const re = output[2 * k];
-      const im = output[2 * k + 1];
-      const power = re * re + im * im;
-      spectrogram[k][i] = 10 * Math.log10(power + eps); // Power spectrum in dB
-    }
-  }
-  return spectrogram;
-}
-
-function hannWindow(length: number) {
-  const win = new Float32Array(length);
-  for (let i = 0; i < length; i += 1) {
-    win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (length - 1));
-  }
-  return win;
-}
-
-
-function resetDownloads() {
-  elements.downloadCsv.disabled = true;
-}
-
-async function handleAudioFile(file?: File) {
+/**
+ * Handles a newly selected audio file:
+ * - Decodes audio to Float32Array
+ * - Renders spectrogram
+ * - Sets up audio player for playback
+ *
+ * @param file - Audio file to process (or uses file input value)
+ */
+async function handleAudioFile(file?: File): Promise<void> {
   const targetFile = file ?? elements.audioFile.files?.[0];
   if (!targetFile) return;
-  elements.audioMeta.textContent = `${targetFile.name} (${bytesToSize(targetFile.size)})`;
+
+  // Show file info
+  elements.audioMeta.textContent = `${targetFile.name} (${formatBytes(targetFile.size)})`;
   setStatus("Decoding audio...");
-  audioData = await decodeAudio(targetFile);
-  setStatus(`Audio ready: ${audioDuration.toFixed(2)}s at ${SR} Hz.`);
-  if (audioUrl) {
-    URL.revokeObjectURL(audioUrl);
+
+  // Decode to 32kHz mono
+  audioData = await decodeAudioFile(targetFile, SAMPLE_RATE);
+  audioDuration = audioData.length / SAMPLE_RATE;
+  setStatus(`Audio ready: ${audioDuration.toFixed(2)}s at ${SAMPLE_RATE} Hz.`);
+
+  // Set up audio player with original file for accurate playback
+  if (audioObjectUrl) {
+    URL.revokeObjectURL(audioObjectUrl);
   }
-  audioUrl = URL.createObjectURL(targetFile);
-  elements.audioPlayer.src = audioUrl;
+  audioObjectUrl = URL.createObjectURL(targetFile);
+  elements.audioPlayer.src = audioObjectUrl;
   elements.audioPlayer.load();
-  updateAudioTime();
+  updateAudioTimeDisplay();
+
+  // Reset state
   clearSegmentPlayback();
-  resetDownloads();
+  elements.downloadCsv.disabled = true;
   elements.resultsSection.classList.add("hidden");
+
+  // Show spectrogram and audio controls
   elements.spectrogramSection.classList.remove("hidden");
   elements.audioControls.classList.remove("hidden");
   updateRunButton();
-  renderSpectrogram(audioData);
+
+  // Render spectrogram visualization
+  renderSpectrogram(elements.spectrogram, audioData);
 }
 
+// -----------------------------------------------------------------------------
+// Event Listeners
+// -----------------------------------------------------------------------------
+
+// Dropzone: click to open file picker
 elements.dropzone.addEventListener("click", () => {
   elements.audioFile.click();
 });
 
+// Dropzone: visual feedback on drag
 elements.dropzone.addEventListener("dragover", (event) => {
   event.preventDefault();
   elements.dropzone.classList.add("dragover");
@@ -562,6 +571,7 @@ elements.dropzone.addEventListener("dragleave", () => {
   elements.dropzone.classList.remove("dragover");
 });
 
+// Dropzone: handle file drop
 elements.dropzone.addEventListener("drop", (event) => {
   event.preventDefault();
   elements.dropzone.classList.remove("dragover");
@@ -571,21 +581,28 @@ elements.dropzone.addEventListener("drop", (event) => {
   }
 });
 
+// File input: handle selection via dialog
 elements.audioFile.addEventListener("change", () => {
   handleAudioFile();
 });
 
+// Run button: load model (if needed) then run inference
 elements.runInferenceBtn.addEventListener("click", async () => {
+  // Load model on first click
   if (!modelReady) {
     elements.runInferenceBtn.classList.add("btn--loading");
     elements.runInferenceBtn.disabled = true;
-    await handleLoadModel();
+    await loadModel();
   }
+
+  // Abort if model failed to load
   if (!modelReady) {
     elements.runInferenceBtn.classList.remove("btn--loading");
     elements.runInferenceBtn.disabled = false;
     return;
   }
+
+  // Run inference with loading state
   elements.runInferenceBtn.classList.add("btn--loading");
   elements.runInferenceBtn.disabled = true;
   try {
@@ -596,33 +613,38 @@ elements.runInferenceBtn.addEventListener("click", async () => {
   }
 });
 
+// Download CSV button
 elements.downloadCsv.addEventListener("click", () => {
-  if (!lastDetectionsCsv) return;
-  downloadText("detections.csv", lastDetectionsCsv);
+  if (lastDetectionsCsv) {
+    downloadTextFile("detections.csv", lastDetectionsCsv);
+  }
 });
 
-elements.audioPlayer.addEventListener("loadedmetadata", () => {
-  updateAudioTime();
-});
-
+// Audio player: update time display
+elements.audioPlayer.addEventListener("loadedmetadata", updateAudioTimeDisplay);
 elements.audioPlayer.addEventListener("timeupdate", () => {
-  updateAudioTime();
-  if (segmentEnd !== null && elements.audioPlayer.currentTime >= segmentEnd) {
+  updateAudioTimeDisplay();
+
+  // Auto-pause at segment end
+  if (segmentEndTime !== null && elements.audioPlayer.currentTime >= segmentEndTime) {
     elements.audioPlayer.pause();
     clearSegmentPlayback();
   }
 });
 
+// Audio player: handle manual pause during segment playback
 elements.audioPlayer.addEventListener("pause", () => {
-  if (segmentEnd !== null && elements.audioPlayer.currentTime < segmentEnd) {
+  if (segmentEndTime !== null && elements.audioPlayer.currentTime < segmentEndTime) {
     clearSegmentPlayback();
   }
 });
 
+// Detection table: click row to play segment
 elements.detectionsTable.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
   const row = target.closest("tr");
   if (!row || !(row instanceof HTMLTableRowElement)) return;
+
   const start = Number(row.dataset.start);
   const end = Number(row.dataset.end);
   if (Number.isFinite(start) && Number.isFinite(end)) {
@@ -630,11 +652,14 @@ elements.detectionsTable.addEventListener("click", (event) => {
   }
 });
 
+// Detection table: keyboard accessibility
 elements.detectionsTable.addEventListener("keydown", (event) => {
-  if (!(event.key === "Enter" || event.key === " ")) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+
   const target = event.target as HTMLElement;
   const row = target.closest("tr");
   if (!row || !(row instanceof HTMLTableRowElement)) return;
+
   const start = Number(row.dataset.start);
   const end = Number(row.dataset.end);
   if (Number.isFinite(start) && Number.isFinite(end)) {
@@ -643,7 +668,11 @@ elements.detectionsTable.addEventListener("keydown", (event) => {
   }
 });
 
+// -----------------------------------------------------------------------------
+// Initialization
+// -----------------------------------------------------------------------------
 
+// Set initial UI state
 updateRunButton();
 setStatus("Upload audio to begin.");
 setModelStatus("Model not loaded", false);
