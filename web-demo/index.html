@@ -24,6 +24,7 @@
           <div class="sidebar__section">
             <p class="eyebrow">Settings</p>
             <span id="model-status" class="status-pill">Model ready</span>
+            <span id="provider-status" class="status-pill status-pill--warn">Provider: auto</span>
           </div>
           <div class="sidebar__section grid">
             <div class="field">
@@ -80,16 +81,26 @@
             <h2>Audio</h2>
             <div id="dropzone" class="dropzone">
               <input id="audio-file" type="file" accept=".wav,.mp3,.ogg,.flac,.m4a" />
-              <div>
-                <p>Drop audio here or click to upload</p>
-                <small id="audio-meta" class="muted">No file loaded</small>
+              <div class="dropzone__content">
+                <p class="dropzone__title">Drop audio here or click to upload</p>
+                <p class="dropzone__hint">WAV, MP3, OGG, FLAC, M4A</p>
+                <small id="audio-meta" class="dropzone__meta muted">No file loaded</small>
+              </div>
+            </div>
+            <div class="audio-controls">
+              <audio id="audio-player" controls preload="metadata"></audio>
+              <div class="audio-meta-row">
+                <span id="audio-time" class="muted">00:00 / 00:00</span>
+                <span id="segment-status" class="muted"></span>
               </div>
             </div>
           </section>
 
           <section id="spectrogram-section" class="panel hidden">
             <h2>Spectrogram</h2>
-            <canvas id="spectrogram" width="900" height="220"></canvas>
+            <div class="spectrogram-wrap">
+              <canvas id="spectrogram" width="900" height="220"></canvas>
+            </div>
           </section>
 
           <section id="results-section" class="panel hidden">
@@ -109,6 +120,7 @@
               </table>
             </div>
             <p id="detections-note" class="muted"></p>
+            <p class="muted">Click a row to play that segment.</p>
           </section>
         </main>
       </div>

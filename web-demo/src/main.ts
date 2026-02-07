@@ -23,6 +23,7 @@ const elements = {
   loadStatus: $("load-status") as HTMLParagraphElement,
   appShell: $("app-shell") as HTMLDivElement,
   modelStatus: $("model-status") as HTMLSpanElement,
+  providerStatus: $("provider-status") as HTMLSpanElement,
   audioFile: $("audio-file") as HTMLInputElement,
   audioMeta: $("audio-meta") as HTMLSpanElement,
   dropzone: $("dropzone") as HTMLDivElement,
@@ -41,7 +42,10 @@ const elements = {
   runStatus: $("run-status") as HTMLParagraphElement,
   detectionsTable: $("detections-table") as HTMLTableElement,
   detectionsNote: $("detections-note") as HTMLParagraphElement,
-  downloadCsv: $("download-csv") as HTMLButtonElement
+  downloadCsv: $("download-csv") as HTMLButtonElement,
+  audioPlayer: $("audio-player") as HTMLAudioElement,
+  audioTime: $("audio-time") as HTMLSpanElement,
+  segmentStatus: $("segment-status") as HTMLSpanElement
 };
 
 if (!elements.loadModelBtn) {
@@ -50,15 +54,23 @@ if (!elements.loadModelBtn) {
 
 let audioData: Float32Array | null = null;
 let audioDuration = 0;
-let labels: string[] = [];
+let labelScientific: string[] = [];
+let labelCommon: string[] = [];
 let session: ort.InferenceSession | null = null;
 let modelReady = false;
 let lastDetectionsCsv = "";
+let audioUrl: string | null = null;
+let segmentEnd: number | null = null;
+let activeSegmentRow: HTMLTableRowElement | null = null;
 
 ort.env.wasm.wasmPaths = "/ort/";
 
 function setStatus(text: string) {
   elements.runStatus.textContent = text;
+}
+
+function setSegmentStatus(text: string) {
+  elements.segmentStatus.textContent = text;
 }
 
 function setLoadStatus(text: string) {
@@ -69,6 +81,12 @@ function setModelStatus(text: string, ok: boolean) {
   elements.modelStatus.textContent = text;
   elements.modelStatus.classList.toggle("status-pill--ok", ok);
   elements.modelStatus.classList.toggle("status-pill--bad", !ok);
+}
+
+function setProviderStatus(text: string, level: "ok" | "warn") {
+  elements.providerStatus.textContent = text;
+  elements.providerStatus.classList.toggle("status-pill--ok", level === "ok");
+  elements.providerStatus.classList.toggle("status-pill--warn", level === "warn");
 }
 
 function setLoadingState(loading: boolean) {
@@ -85,6 +103,46 @@ function bytesToSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function updateAudioTime() {
+  const current = elements.audioPlayer.currentTime || 0;
+  const duration = elements.audioPlayer.duration || audioDuration || 0;
+  elements.audioTime.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+}
+
+function clearSegmentPlayback() {
+  segmentEnd = null;
+  setSegmentStatus("");
+  if (activeSegmentRow) {
+    activeSegmentRow.classList.remove("table-row--active");
+    activeSegmentRow = null;
+  }
+}
+
+function playSegment(start: number, end: number, row?: HTMLTableRowElement) {
+  if (!elements.audioPlayer.src) return;
+  const clampedStart = Math.max(0, start);
+  const clampedEnd = Math.max(clampedStart, end);
+  segmentEnd = clampedEnd;
+  elements.audioPlayer.currentTime = clampedStart;
+  elements.audioPlayer.play();
+  setSegmentStatus(`Playing ${clampedStart.toFixed(2)}s - ${clampedEnd.toFixed(2)}s`);
+  if (activeSegmentRow && activeSegmentRow !== row) {
+    activeSegmentRow.classList.remove("table-row--active");
+  }
+  if (row) {
+    row.classList.add("table-row--active");
+    activeSegmentRow = row;
+  }
 }
 
 
@@ -129,7 +187,7 @@ function resampleLinear(input: Float32Array, srcSr: number, targetSr: number) {
   return output;
 }
 
-function chunkAudio(
+function chunkAudioPlan(
   y: Float32Array,
   chunkLengthSec: number,
   overlapSec: number,
@@ -141,17 +199,15 @@ function chunkAudio(
     throw new Error("Overlap must be smaller than chunk length.");
   }
   const step = chunkSamples - overlapSamples;
-  const chunks: Float32Array[] = [];
+  const starts: number[] = [];
   const spans: Array<[number, number]> = [];
   for (let start = 0; start < y.length; start += step) {
     const end = Math.min(start + chunkSamples, y.length);
-    const slice = new Float32Array(chunkSamples);
-    slice.set(y.slice(start, end));
-    chunks.push(slice);
+    starts.push(start);
     spans.push([start / sr, end / sr]);
     if (end >= y.length) break;
   }
-  return { chunks, spans, chunkSamples };
+  return { starts, spans, chunkSamples };
 }
 
 function parseCsvLine(line: string, delimiter: string) {
@@ -175,22 +231,24 @@ function parseCsvLine(line: string, delimiter: string) {
   return out;
 }
 
-function parseLabelsCsv(text: string): string[] {
+function parseLabelsCsv(text: string) {
   const lines = text.trim().split(/\r?\n/);
-  if (lines.length === 0) return [];
+  if (lines.length === 0) return { scientific: [], common: [] };
   const header = parseCsvLine(lines[0], ";");
   const sciIndex = header.indexOf("sci_name");
   const comIndex = header.indexOf("com_name");
-  const labels: string[] = [];
+  const scientific: string[] = [];
+  const common: string[] = [];
   for (let i = 1; i < lines.length; i += 1) {
     const cols = parseCsvLine(lines[i], ";");
     const sci = (cols[sciIndex] || "").trim();
     const com = (cols[comIndex] || "").trim();
     if (sci || com) {
-      labels.push(`${sci}_${com}`);
+      scientific.push(sci);
+      common.push(com);
     }
   }
-  return labels;
+  return { scientific, common };
 }
 
 
@@ -202,6 +260,12 @@ function renderDetectionsTable(rows: DetectionRow[]) {
   for (let i = 0; i < limit; i += 1) {
     const row = rows[i];
     const tr = document.createElement("tr");
+    tr.classList.add("table-row");
+    tr.tabIndex = 0;
+    tr.setAttribute("role", "button");
+    tr.setAttribute("aria-label", `Play ${row.start.toFixed(2)} to ${row.end.toFixed(2)} seconds`);
+    tr.dataset.start = row.start.toString();
+    tr.dataset.end = row.end.toString();
     tr.innerHTML = `
       <td>${row.start.toFixed(3)}</td>
       <td>${row.end.toFixed(3)}</td>
@@ -258,31 +322,49 @@ async function loadLabelsFromUrl(url: string) {
   }
   const text = await res.text();
   const parsed = parseLabelsCsv(text);
-  if (!parsed.length) {
+  if (!parsed.scientific.length) {
     throw new Error("No labels parsed from CSV.");
   }
   return parsed;
 }
 
 async function loadModelFromUrl(url: string) {
-  return ort.InferenceSession.create(url, {
-    executionProviders: ["wasm"],
-    graphOptimizationLevel: "all"
-  });
+  try {
+    const webglSession = await ort.InferenceSession.create(url, {
+      executionProviders: ["webgl"],
+      graphOptimizationLevel: "all"
+    });
+    return { session: webglSession, provider: "webgl" as const };
+  } catch (err) {
+    const wasmSession = await ort.InferenceSession.create(url, {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all"
+    });
+    return { session: wasmSession, provider: "wasm" as const, error: err };
+  }
 }
 
 async function loadModelFromFile(file: File) {
   const buffer = await file.arrayBuffer();
-  return ort.InferenceSession.create(buffer, {
-    executionProviders: ["wasm"],
-    graphOptimizationLevel: "all"
-  });
+  try {
+    const webglSession = await ort.InferenceSession.create(buffer, {
+      executionProviders: ["webgl"],
+      graphOptimizationLevel: "all"
+    });
+    return { session: webglSession, provider: "webgl" as const };
+  } catch (err) {
+    const wasmSession = await ort.InferenceSession.create(buffer, {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all"
+    });
+    return { session: wasmSession, provider: "wasm" as const, error: err };
+  }
 }
 
 async function loadLabelsFromFile(file: File) {
   const text = await file.text();
   const parsed = parseLabelsCsv(text);
-  if (!parsed.length) {
+  if (!parsed.scientific.length) {
     throw new Error("No labels parsed from CSV.");
   }
   return parsed;
@@ -301,13 +383,29 @@ async function handleLoadModel() {
     const localModel = elements.localModel.files?.[0] || null;
     const localLabels = elements.localLabels.files?.[0] || null;
     if (localModel && localLabels) {
-      labels = await loadLabelsFromFile(localLabels);
-      session = await loadModelFromFile(localModel);
+      const parsed = await loadLabelsFromFile(localLabels);
+      labelScientific = parsed.scientific;
+      labelCommon = parsed.common;
+      const result = await loadModelFromFile(localModel);
+      session = result.session;
+      if (result.provider === "webgl") {
+        setProviderStatus("Provider: WebGL", "ok");
+      } else {
+        setProviderStatus("Provider: WASM (WebGL unavailable)", "warn");
+      }
     } else {
       const modelUrl = elements.modelUrl.value || MODEL_URL_DEFAULT;
       const labelsUrl = elements.labelsUrl.value || LABELS_URL_DEFAULT;
-      labels = await loadLabelsFromUrl(labelsUrl);
-      session = await loadModelFromUrl(modelUrl);
+      const parsed = await loadLabelsFromUrl(labelsUrl);
+      labelScientific = parsed.scientific;
+      labelCommon = parsed.common;
+      const result = await loadModelFromUrl(modelUrl);
+      session = result.session;
+      if (result.provider === "webgl") {
+        setProviderStatus("Provider: WebGL", "ok");
+      } else {
+        setProviderStatus("Provider: WASM (WebGL unavailable)", "warn");
+      }
     }
     modelReady = true;
     setModelStatus("Model ready", true);
@@ -346,29 +444,31 @@ async function runInference() {
   const minConf = Number(elements.minConf.value);
 
   setStatus("Chunking audio...");
-  const { chunks, spans, chunkSamples } = chunkAudio(audioData, chunkLength, overlap, SR);
-  if (!chunks.length) {
+  const { starts, spans, chunkSamples } = chunkAudioPlan(audioData, chunkLength, overlap, SR);
+  if (!starts.length) {
     setStatus("No audio samples to process.");
     return;
   }
 
-  const labelCount = labels.length;
+  const labelCount = labelScientific.length;
+  const audioLen = audioData.length;
 
   const detections: DetectionRow[] = [];
   const startTime = performance.now();
 
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    const batchCount = batch.length;
+  for (let i = 0; i < starts.length; i += batchSize) {
+    const batchCount = Math.min(batchSize, starts.length - i);
     const input = new Float32Array(batchCount * chunkSamples);
     for (let b = 0; b < batchCount; b += 1) {
-      input.set(batch[b], b * chunkSamples);
+      const startSample = starts[i + b];
+      const endSample = Math.min(startSample + chunkSamples, audioLen);
+      input.set(audioData.subarray(startSample, endSample), b * chunkSamples);
     }
     const tensor = new ort.Tensor("float32", input, [batchCount, chunkSamples]);
     const feeds: Record<string, ort.Tensor> = {
       [session.inputNames[0]]: tensor
     };
-    setStatus(`Running inference... ${Math.min(i + batchCount, chunks.length)}/${chunks.length}`);
+    setStatus(`Running inference... ${Math.min(i + batchCount, starts.length)}/${starts.length}`);
     const results = await session.run(feeds);
     const predTensor = pickPredictionTensor(results, labelCount);
     const preds = predTensor.data as Float32Array;
@@ -380,13 +480,11 @@ async function runInference() {
       for (let c = 0; c < labelCount; c += 1) {
         const val = preds[offset + c];
         if (val >= minConf) {
-          const label = labels[c] || "";
-          const parts = label.split("_");
           detections.push({
             start,
             end,
-            scientific: parts[0] || "",
-            common: parts[1] || "",
+            scientific: labelScientific[c] || "",
+            common: labelCommon[c] || "",
             confidence: val
           });
         }
@@ -410,6 +508,7 @@ function renderSpectrogram(y: Float32Array) {
   const canvas = elements.spectrogram;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  ctx.imageSmoothingEnabled = false;
   const spectrogram = computeMelSpectrogram(y);
   const height = spectrogram.length;
   const width = spectrogram[0]?.length || 0;
@@ -539,6 +638,14 @@ async function handleAudioFile(file?: File) {
   setStatus("Decoding audio...");
   audioData = await decodeAudio(targetFile);
   setStatus(`Audio ready: ${audioDuration.toFixed(2)}s at ${SR} Hz.`);
+  if (audioUrl) {
+    URL.revokeObjectURL(audioUrl);
+  }
+  audioUrl = URL.createObjectURL(targetFile);
+  elements.audioPlayer.src = audioUrl;
+  elements.audioPlayer.load();
+  updateAudioTime();
+  clearSegmentPlayback();
   resetDownloads();
   elements.resultsSection.classList.add("hidden");
   elements.spectrogramSection.classList.remove("hidden");
@@ -583,6 +690,48 @@ elements.runInferenceBtn.addEventListener("click", () => {
 elements.downloadCsv.addEventListener("click", () => {
   if (!lastDetectionsCsv) return;
   downloadText("detections.csv", lastDetectionsCsv);
+});
+
+elements.audioPlayer.addEventListener("loadedmetadata", () => {
+  updateAudioTime();
+});
+
+elements.audioPlayer.addEventListener("timeupdate", () => {
+  updateAudioTime();
+  if (segmentEnd !== null && elements.audioPlayer.currentTime >= segmentEnd) {
+    elements.audioPlayer.pause();
+    clearSegmentPlayback();
+  }
+});
+
+elements.audioPlayer.addEventListener("pause", () => {
+  if (segmentEnd !== null && elements.audioPlayer.currentTime < segmentEnd) {
+    clearSegmentPlayback();
+  }
+});
+
+elements.detectionsTable.addEventListener("click", (event) => {
+  const target = event.target as HTMLElement;
+  const row = target.closest("tr");
+  if (!row || !(row instanceof HTMLTableRowElement)) return;
+  const start = Number(row.dataset.start);
+  const end = Number(row.dataset.end);
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    playSegment(start, end, row);
+  }
+});
+
+elements.detectionsTable.addEventListener("keydown", (event) => {
+  if (!(event.key === "Enter" || event.key === " ")) return;
+  const target = event.target as HTMLElement;
+  const row = target.closest("tr");
+  if (!row || !(row instanceof HTMLTableRowElement)) return;
+  const start = Number(row.dataset.start);
+  const end = Number(row.dataset.end);
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    event.preventDefault();
+    playSegment(start, end, row);
+  }
 });
 
 
