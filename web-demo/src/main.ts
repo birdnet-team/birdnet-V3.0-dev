@@ -1,12 +1,12 @@
 import "./style.css";
 import FFT from "fft.js";
-import * as ort from "onnxruntime-web";
+import InferenceWorker from "./inference.worker.ts?worker";
 
 const SR = 32000;
 const N_FFT = 2048; // Higher resolution for better frequency detail
 const HOP = 512;    // Balanced hop for smooth time axis
 const N_MELS = 128;
-const MAX_TABLE_ROWS = 10;
+const MAX_TABLE_ROWS = 500;
 const DYNAMIC_RANGE_DB = 80; // Tighter range for better visual contrast
 
 const MODEL_URL_DEFAULT =
@@ -52,17 +52,50 @@ if (!elements.runInferenceBtn) {
 
 let audioData: Float32Array | null = null;
 let audioDuration = 0;
-let labelScientific: string[] = [];
-let labelCommon: string[] = [];
-let session: ort.InferenceSession | null = null;
 let modelReady = false;
 let modelLoading = false;
 let lastDetectionsCsv = "";
 let audioUrl: string | null = null;
 let segmentEnd: number | null = null;
 let activeSegmentRow: HTMLTableRowElement | null = null;
+let workerMsgId = 0;
 
-ort.env.wasm.wasmPaths = "/ort/";
+// Initialize web worker for inference
+const inferenceWorker = new InferenceWorker();
+const pendingWorkerCalls = new Map<number, {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+  onProgress?: (current: number, total: number) => void;
+}>();
+
+inferenceWorker.onmessage = (event: MessageEvent) => {
+  const msg = event.data;
+  if (msg.type === "inferenceProgress" && pendingWorkerCalls.has(msg.id)) {
+    const call = pendingWorkerCalls.get(msg.id)!;
+    call.onProgress?.(msg.current, msg.total);
+    return;
+  }
+  if (pendingWorkerCalls.has(msg.id)) {
+    const call = pendingWorkerCalls.get(msg.id)!;
+    pendingWorkerCalls.delete(msg.id);
+    call.resolve(msg);
+  }
+};
+
+inferenceWorker.onerror = (err: ErrorEvent) => {
+  console.error("Worker error:", err);
+};
+
+function callWorker<T>(
+  message: Record<string, unknown>,
+  onProgress?: (current: number, total: number) => void
+): Promise<T> {
+  const id = ++workerMsgId;
+  return new Promise((resolve, reject) => {
+    pendingWorkerCalls.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress });
+    inferenceWorker.postMessage({ ...message, id });
+  });
+}
 
 function setStatus(text: string) {
   elements.runStatus.textContent = text;
@@ -172,70 +205,6 @@ function resampleLinear(input: Float32Array, srcSr: number, targetSr: number) {
   return output;
 }
 
-function chunkAudioPlan(
-  y: Float32Array,
-  chunkLengthSec: number,
-  overlapSec: number,
-  sr: number
-) {
-  const chunkSamples = Math.max(1, Math.round(chunkLengthSec * sr));
-  const overlapSamples = Math.round(overlapSec * sr);
-  if (overlapSamples >= chunkSamples) {
-    throw new Error("Overlap must be smaller than chunk length.");
-  }
-  const step = chunkSamples - overlapSamples;
-  const starts: number[] = [];
-  const spans: Array<[number, number]> = [];
-  for (let start = 0; start < y.length; start += step) {
-    const end = Math.min(start + chunkSamples, y.length);
-    starts.push(start);
-    spans.push([start / sr, end / sr]);
-    if (end >= y.length) break;
-  }
-  return { starts, spans, chunkSamples };
-}
-
-function parseCsvLine(line: string, delimiter: string) {
-  const out: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (ch === delimiter && !inQuotes) {
-      out.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  out.push(current);
-  return out;
-}
-
-function parseLabelsCsv(text: string) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length === 0) return { scientific: [], common: [] };
-  const header = parseCsvLine(lines[0], ";");
-  const sciIndex = header.indexOf("sci_name");
-  const comIndex = header.indexOf("com_name");
-  const scientific: string[] = [];
-  const common: string[] = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    const cols = parseCsvLine(lines[i], ";");
-    const sci = (cols[sciIndex] || "").trim();
-    const com = (cols[comIndex] || "").trim();
-    if (sci || com) {
-      scientific.push(sci);
-      common.push(com);
-    }
-  }
-  return { scientific, common };
-}
-
 
 function renderDetectionsTable(rows: DetectionRow[]) {
   const tbody = elements.detectionsTable.querySelector("tbody") as HTMLTableSectionElement;
@@ -300,61 +269,6 @@ function downloadText(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-async function loadLabelsFromUrl(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch labels: ${res.status}`);
-  }
-  const text = await res.text();
-  const parsed = parseLabelsCsv(text);
-  if (!parsed.scientific.length) {
-    throw new Error("No labels parsed from CSV.");
-  }
-  return parsed;
-}
-
-async function loadModelFromUrl(url: string) {
-  try {
-    const webglSession = await ort.InferenceSession.create(url, {
-      executionProviders: ["webgl"],
-      graphOptimizationLevel: "all"
-    });
-    return { session: webglSession, provider: "webgl" as const };
-  } catch (err) {
-    const wasmSession = await ort.InferenceSession.create(url, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all"
-    });
-    return { session: wasmSession, provider: "wasm" as const, error: err };
-  }
-}
-
-async function loadModelFromFile(file: File) {
-  const buffer = await file.arrayBuffer();
-  try {
-    const webglSession = await ort.InferenceSession.create(buffer, {
-      executionProviders: ["webgl"],
-      graphOptimizationLevel: "all"
-    });
-    return { session: webglSession, provider: "webgl" as const };
-  } catch (err) {
-    const wasmSession = await ort.InferenceSession.create(buffer, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all"
-    });
-    return { session: wasmSession, provider: "wasm" as const, error: err };
-  }
-}
-
-async function loadLabelsFromFile(file: File) {
-  const text = await file.text();
-  const parsed = parseLabelsCsv(text);
-  if (!parsed.scientific.length) {
-    throw new Error("No labels parsed from CSV.");
-  }
-  return parsed;
-}
-
 function updateRunButton() {
   const ready = !!audioData && !modelLoading;
   elements.runInferenceBtn.disabled = !ready;
@@ -367,38 +281,50 @@ async function handleLoadModel() {
     updateRunButton();
     setStatus("Loading model...");
     setModelStatus("Loading model...", false);
+
     const localModel = elements.localModel.files?.[0] || null;
     const localLabels = elements.localLabels.files?.[0] || null;
+
+    type LoadModelResult = {
+      type: string;
+      success: boolean;
+      provider?: "webgl" | "wasm";
+      labelCount?: number;
+      error?: string;
+    };
+
+    let result: LoadModelResult;
     if (localModel && localLabels) {
-      const parsed = await loadLabelsFromFile(localLabels);
-      labelScientific = parsed.scientific;
-      labelCommon = parsed.common;
-      const result = await loadModelFromFile(localModel);
-      session = result.session;
+      const modelBuffer = await localModel.arrayBuffer();
+      const labelsText = await localLabels.text();
+      result = await callWorker<LoadModelResult>({
+        type: "loadModel",
+        modelBuffer,
+        labelsText
+      });
+    } else {
+      const modelUrl = elements.modelUrl.value || MODEL_URL_DEFAULT;
+      const labelsUrl = elements.labelsUrl.value || LABELS_URL_DEFAULT;
+      result = await callWorker<LoadModelResult>({
+        type: "loadModel",
+        modelUrl,
+        labelsUrl
+      });
+    }
+
+    if (result.success) {
+      modelReady = true;
+      setModelStatus("Model ready", true);
       if (result.provider === "webgl") {
         setProviderStatus("Provider: WebGL", "ok");
       } else {
         setProviderStatus("Provider: WASM (WebGL unavailable)", "warn");
       }
     } else {
-      const modelUrl = elements.modelUrl.value || MODEL_URL_DEFAULT;
-      const labelsUrl = elements.labelsUrl.value || LABELS_URL_DEFAULT;
-      const parsed = await loadLabelsFromUrl(labelsUrl);
-      labelScientific = parsed.scientific;
-      labelCommon = parsed.common;
-      const result = await loadModelFromUrl(modelUrl);
-      session = result.session;
-      if (result.provider === "webgl") {
-        setProviderStatus("Provider: WebGL", "ok");
-      } else {
-        setProviderStatus("Provider: WASM (WebGL unavailable)", "warn");
-      }
+      throw new Error(result.error || "Failed to load model");
     }
-    modelReady = true;
-    setModelStatus("Model ready", true);
   } catch (err) {
     modelReady = false;
-    session = null;
     setModelStatus("Failed to load model", false);
     setStatus((err as Error).message);
   }
@@ -414,75 +340,49 @@ type DetectionRow = {
   confidence: number;
 };
 
-function pickPredictionTensor(outputs: Record<string, ort.Tensor>, labelCount: number) {
-  const tensors = Object.values(outputs);
-  const byLabelCount = tensors.find((t) => t.dims?.length === 2 && t.dims[1] === labelCount);
-  if (byLabelCount) return byLabelCount;
-  return tensors[0];
-}
-
 async function runInference() {
-  if (!session || !audioData) return;
+  if (!modelReady || !audioData) return;
+
   const chunkLength = Number(elements.chunkLength.value);
   const overlap = Number(elements.overlap.value);
   const batchSize = Number(elements.batchSize.value);
   const minConf = Number(elements.minConf.value);
 
-  setStatus("Chunking audio...");
-  const { starts, spans, chunkSamples } = chunkAudioPlan(audioData, chunkLength, overlap, SR);
-  if (!starts.length) {
-    setStatus("No audio samples to process.");
+  setStatus("Running inference...");
+
+  type InferenceResult = {
+    type: string;
+    success: boolean;
+    detections?: DetectionRow[];
+    duration?: number;
+    error?: string;
+  };
+
+  const result = await callWorker<InferenceResult>(
+    {
+      type: "runInference",
+      audioData,
+      chunkLength,
+      overlap,
+      batchSize,
+      minConf,
+      sampleRate: SR
+    },
+    (current, total) => {
+      setStatus(`Running inference... ${current}/${total}`);
+    }
+  );
+
+  if (!result.success) {
+    setStatus(result.error || "Inference failed");
     return;
   }
 
-  const labelCount = labelScientific.length;
-  const audioLen = audioData.length;
-
-  const detections: DetectionRow[] = [];
-  const startTime = performance.now();
-
-  for (let i = 0; i < starts.length; i += batchSize) {
-    const batchCount = Math.min(batchSize, starts.length - i);
-    const input = new Float32Array(batchCount * chunkSamples);
-    for (let b = 0; b < batchCount; b += 1) {
-      const startSample = starts[i + b];
-      const endSample = Math.min(startSample + chunkSamples, audioLen);
-      input.set(audioData.subarray(startSample, endSample), b * chunkSamples);
-    }
-    const tensor = new ort.Tensor("float32", input, [batchCount, chunkSamples]);
-    const feeds: Record<string, ort.Tensor> = {
-      [session.inputNames[0]]: tensor
-    };
-    setStatus(`Running inference... ${Math.min(i + batchCount, starts.length)}/${starts.length}`);
-    const results = await session.run(feeds);
-    const predTensor = pickPredictionTensor(results, labelCount);
-    const preds = predTensor.data as Float32Array;
-    const outDim = predTensor.dims?.[1] || labelCount;
-
-    for (let b = 0; b < batchCount; b += 1) {
-      const offset = b * outDim;
-      const [start, end] = spans[i + b];
-      for (let c = 0; c < labelCount; c += 1) {
-        const val = preds[offset + c];
-        if (val >= minConf) {
-          detections.push({
-            start,
-            end,
-            scientific: labelScientific[c] || "",
-            common: labelCommon[c] || "",
-            confidence: val
-          });
-        }
-      }
-    }
-  }
-
-  const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+  const detections = result.detections || [];
+  const duration = result.duration?.toFixed(2) || "0";
   setStatus(`Inference complete in ${duration}s. Audio duration ${audioDuration.toFixed(2)}s.`);
 
-  detections.sort((a, b) => (a.start === b.start ? b.confidence - a.confidence : a.start - b.start));
   renderDetectionsTable(detections);
-
   elements.resultsSection.classList.remove("hidden");
 
   lastDetectionsCsv = buildDetectionsCsv(detections);
