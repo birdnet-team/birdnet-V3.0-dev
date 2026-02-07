@@ -61,6 +61,10 @@ const elements = {
   audioFile: $<HTMLInputElement>("audio-file")!,
   audioMeta: $<HTMLSpanElement>("audio-meta")!,
   dropzone: $<HTMLDivElement>("dropzone")!,
+  fileInfoBar: $<HTMLDivElement>("file-info-bar")!,
+  fileInfoName: $<HTMLSpanElement>("file-info-name")!,
+  fileInfoSize: $<HTMLSpanElement>("file-info-size")!,
+  changeFileBtn: $<HTMLButtonElement>("change-file-btn")!,
 
   // Visualization
   spectrogram: $<HTMLCanvasElement>("spectrogram")!,
@@ -520,8 +524,15 @@ async function handleAudioFile(file?: File): Promise<void> {
   const targetFile = file ?? elements.audioFile.files?.[0];
   if (!targetFile) return;
 
-  // Show file info
+  // Show file info in the collapsed bar
+  elements.fileInfoName.textContent = targetFile.name;
+  elements.fileInfoSize.textContent = `(${formatBytes(targetFile.size)})`;
   elements.audioMeta.textContent = `${targetFile.name} (${formatBytes(targetFile.size)})`;
+  
+  // Collapse dropzone and show file info bar
+  elements.dropzone.classList.add("hidden");
+  elements.fileInfoBar.classList.remove("hidden");
+  
   setStatus("Decoding audio...");
 
   // Decode to 32kHz mono
@@ -584,6 +595,13 @@ elements.dropzone.addEventListener("drop", (event) => {
 // File input: handle selection via dialog
 elements.audioFile.addEventListener("change", () => {
   handleAudioFile();
+});
+
+// Change file button: show dropzone again
+elements.changeFileBtn.addEventListener("click", () => {
+  elements.fileInfoBar.classList.add("hidden");
+  elements.dropzone.classList.remove("hidden");
+  elements.audioFile.click();
 });
 
 // Run button: load model (if needed) then run inference
