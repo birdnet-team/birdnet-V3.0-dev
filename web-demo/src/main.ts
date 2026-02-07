@@ -3,11 +3,10 @@ import FFT from "fft.js";
 import InferenceWorker from "./inference.worker.ts?worker";
 
 const SR = 32000;
-const N_FFT = 2048; // Higher resolution for better frequency detail
-const HOP = 512;    // Balanced hop for smooth time axis
-const N_MELS = 128;
+const N_FFT = 2048;
+const HOP = 512;
 const MAX_TABLE_ROWS = 500;
-const DYNAMIC_RANGE_DB = 80; // Tighter range for better visual contrast
+const DYNAMIC_RANGE_DB = 80;
 
 const MODEL_URL_DEFAULT =
   "/assets/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx";
@@ -435,7 +434,7 @@ function renderSpectrogram(y: Float32Array) {
 
   // Render at fixed display size with smooth scaling
   const displayWidth = 900;
-  const displayHeight = 300;
+  const displayHeight = 200;
   canvas.width = displayWidth;
   canvas.height = displayHeight;
 
