@@ -3,10 +3,11 @@ import FFT from "fft.js";
 import * as ort from "onnxruntime-web";
 
 const SR = 32000;
-const N_FFT = 1024;
-const HOP = 256;
+const N_FFT = 2048; // Higher resolution for better frequency detail
+const HOP = 512;    // Balanced hop for smooth time axis
 const N_MELS = 128;
 const MAX_TABLE_ROWS = 5000;
+const DYNAMIC_RANGE_DB = 80; // Tighter range for better visual contrast
 
 const MODEL_URL_DEFAULT =
   "/assets/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx";
@@ -491,48 +492,106 @@ function renderSpectrogram(y: Float32Array) {
   const canvas = elements.spectrogram;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  ctx.imageSmoothingEnabled = false;
-  const spectrogram = computeMelSpectrogram(y);
+  const spectrogram = computeLinearSpectrogram(y);
   const height = spectrogram.length;
   const width = spectrogram[0]?.length || 0;
-  const image = ctx.createImageData(width, height);
-  let max = -Infinity;
+  if (width === 0) return;
+
+  // Gather all values for percentile-based normalization
+  const allVals: number[] = [];
   for (const row of spectrogram) {
     for (const v of row) {
-      if (v > max) max = v;
+      allVals.push(v);
     }
   }
-  const min = max - 80;
+  allVals.sort((a, b) => a - b);
+
+  // Use percentiles for robust min/max (ignore outliers)
+  const pLow = Math.floor(allVals.length * 0.02);
+  const pHigh = Math.floor(allVals.length * 0.98);
+  const minDb = allVals[pLow];
+  const maxDb = allVals[pHigh];
+  const rangeDb = Math.max(maxDb - minDb, DYNAMIC_RANGE_DB);
+
+  // Create image at native resolution then scale up
+  const nativeImage = ctx.createImageData(width, height);
   for (let yIdx = 0; yIdx < height; yIdx += 1) {
+    const srcRow = height - 1 - yIdx; // Flip vertically
     for (let xIdx = 0; xIdx < width; xIdx += 1) {
-      const value = spectrogram[yIdx][xIdx];
-      const norm = Math.min(1, Math.max(0, (value - min) / (max - min)));
+      const value = spectrogram[srcRow][xIdx];
+      let norm = (value - minDb) / rangeDb;
+      norm = Math.min(1, Math.max(0, norm));
+      // Gamma correction for better mid-tone visibility
+      norm = Math.pow(norm, 0.75);
       const idx = (yIdx * width + xIdx) * 4;
       const color = colorMap(norm);
-      image.data[idx] = color[0];
-      image.data[idx + 1] = color[1];
-      image.data[idx + 2] = color[2];
-      image.data[idx + 3] = 255;
+      nativeImage.data[idx] = color[0];
+      nativeImage.data[idx + 1] = color[1];
+      nativeImage.data[idx + 2] = color[2];
+      nativeImage.data[idx + 3] = 255;
     }
   }
-  canvas.width = width;
-  canvas.height = height;
-  ctx.putImageData(image, 0, 0);
+
+  // Render at fixed display size with smooth scaling
+  const displayWidth = 900;
+  const displayHeight = 300;
+  canvas.width = displayWidth;
+  canvas.height = displayHeight;
+
+  const tmpCanvas = document.createElement("canvas");
+  tmpCanvas.width = width;
+  tmpCanvas.height = height;
+  tmpCanvas.getContext("2d")!.putImageData(nativeImage, 0, 0);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(tmpCanvas, 0, 0, displayWidth, displayHeight);
 }
 
 function colorMap(t: number): [number, number, number] {
-  const r = Math.round(40 + 200 * t);
-  const g = Math.round(30 + 150 * t);
-  const b = Math.round(80 + 120 * (1 - t));
-  return [r, g, b];
+  const clamped = Math.min(1, Math.max(0, t));
+  const stops = [
+    { t: 0.0, c: [68, 1, 84] },
+    { t: 0.13, c: [71, 44, 122] },
+    { t: 0.25, c: [59, 81, 139] },
+    { t: 0.38, c: [44, 113, 142] },
+    { t: 0.5, c: [33, 145, 140] },
+    { t: 0.63, c: [39, 173, 129] },
+    { t: 0.75, c: [92, 200, 99] },
+    { t: 0.88, c: [170, 220, 50] },
+    { t: 1.0, c: [253, 231, 37] }
+  ];
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (clamped >= a.t && clamped <= b.t) {
+      const local = (clamped - a.t) / (b.t - a.t);
+      return [
+        Math.round(a.c[0] + (b.c[0] - a.c[0]) * local),
+        Math.round(a.c[1] + (b.c[1] - a.c[1]) * local),
+        Math.round(a.c[2] + (b.c[2] - a.c[2]) * local)
+      ];
+    }
+  }
+  const last = stops[stops.length - 1].c;
+  return [last[0], last[1], last[2]];
 }
 
-function computeMelSpectrogram(y: Float32Array) {
+function computeLinearSpectrogram(y: Float32Array) {
+  // Pre-emphasis to boost high frequencies (common for speech/bird sounds)
+  const preEmph = 0.97;
+  const emphasized = new Float32Array(y.length);
+  emphasized[0] = y[0];
+  for (let i = 1; i < y.length; i += 1) {
+    emphasized[i] = y[i] - preEmph * y[i - 1];
+  }
+
   const fft = new FFT(N_FFT);
   const window = hannWindow(N_FFT);
-  const melFilters = createMelFilterbank(N_MELS, N_FFT, SR, 0, SR / 2);
-  const frames = Math.floor((y.length - N_FFT) / HOP) + 1;
-  const spectrogram: number[][] = Array.from({ length: N_MELS }, () => new Array(frames).fill(0));
+  const frames = Math.floor((emphasized.length - N_FFT) / HOP) + 1;
+  const nBins = Math.floor(N_FFT / 2) + 1;
+  const spectrogram: number[][] = Array.from({ length: nBins }, () => new Array(frames).fill(0));
+  const eps = 1e-10;
 
   const input = fft.createComplexArray();
   const output = fft.createComplexArray();
@@ -540,23 +599,15 @@ function computeMelSpectrogram(y: Float32Array) {
   for (let i = 0; i < frames; i += 1) {
     const offset = i * HOP;
     for (let j = 0; j < N_FFT; j += 1) {
-      input[2 * j] = (y[offset + j] || 0) * window[j];
+      input[2 * j] = (emphasized[offset + j] || 0) * window[j];
       input[2 * j + 1] = 0;
     }
     fft.transform(output, input);
-    const power = new Float32Array(N_FFT / 2 + 1);
-    for (let k = 0; k < power.length; k += 1) {
+    for (let k = 0; k < nBins; k += 1) {
       const re = output[2 * k];
       const im = output[2 * k + 1];
-      power[k] = re * re + im * im;
-    }
-    for (let m = 0; m < N_MELS; m += 1) {
-      let sum = 0;
-      const filter = melFilters[m];
-      for (let k = 0; k < filter.length; k += 1) {
-        sum += power[k] * filter[k];
-      }
-      spectrogram[m][i] = 10 * Math.log10(sum + 1e-10);
+      const power = re * re + im * im;
+      spectrogram[k][i] = 10 * Math.log10(power + eps); // Power spectrum in dB
     }
   }
   return spectrogram;
@@ -570,45 +621,6 @@ function hannWindow(length: number) {
   return win;
 }
 
-function hzToMel(hz: number) {
-  return 2595 * Math.log10(1 + hz / 700);
-}
-
-function melToHz(mel: number) {
-  return 700 * (10 ** (mel / 2595) - 1);
-}
-
-function createMelFilterbank(mels: number, nFft: number, sr: number, fMin: number, fMax: number) {
-  const melMin = hzToMel(fMin);
-  const melMax = hzToMel(fMax);
-  const melPoints = new Float32Array(mels + 2);
-  for (let i = 0; i < melPoints.length; i += 1) {
-    melPoints[i] = melMin + (i / (mels + 1)) * (melMax - melMin);
-  }
-  const hzPoints = Array.from(melPoints, melToHz);
-  const bins = hzPoints.map((hz) => Math.floor((nFft + 1) * hz / sr));
-  const filters: Float32Array[] = [];
-  const nFreqs = Math.floor(nFft / 2) + 1;
-
-  for (let m = 1; m <= mels; m += 1) {
-    const filter = new Float32Array(nFreqs);
-    const left = bins[m - 1];
-    const center = bins[m];
-    const right = bins[m + 1];
-    for (let k = left; k < center; k += 1) {
-      if (k >= 0 && k < nFreqs) {
-        filter[k] = (k - left) / Math.max(1, center - left);
-      }
-    }
-    for (let k = center; k < right; k += 1) {
-      if (k >= 0 && k < nFreqs) {
-        filter[k] = (right - k) / Math.max(1, right - center);
-      }
-    }
-    filters.push(filter);
-  }
-  return filters;
-}
 
 function resetDownloads() {
   elements.downloadCsv.disabled = true;
