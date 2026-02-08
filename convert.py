@@ -3,7 +3,7 @@
 BirdNET+ Model Converter for Web Inference
 
 Converts ONNX models to optimized formats for browser deployment.
-Supports FP16, INT8 quantization, and graph optimizations.
+Supports FP16, INT8 quantization, species filtering, and graph optimizations.
 
 Usage:
     python convert.py input.onnx --fp16              # Convert to FP16 (~50% size)
@@ -11,6 +11,7 @@ Usage:
     python convert.py input.onnx --optimize          # Graph optimizations only
     python convert.py input.onnx --fp16 --optimize   # FP16 + optimizations
     python convert.py input.onnx --all               # Generate all variants
+    python convert.py input.onnx --species-list species.txt  # Filter to specific species
 
 Requirements:
     pip install onnx onnxruntime onnxconverter-common onnxruntime-tools
@@ -20,6 +21,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import List, Tuple, Optional
 
 
 def get_model_size(path: Path) -> str:
@@ -86,6 +88,235 @@ def print_model_info(model_path: Path) -> None:
     if model.opset_import:
         opset = model.opset_import[0].version
         print(f"\nOpset: {opset}")
+
+
+def load_labels(labels_path: Path) -> List[Tuple[int, str, str]]:
+    """
+    Load labels CSV file.
+    Returns list of (index, scientific_name, common_name) tuples.
+    """
+    import csv
+    labels = []
+    # Use utf-8-sig to handle BOM if present
+    with open(labels_path, 'r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f, delimiter=';')
+        for row in reader:
+            idx = int(row['idx'])
+            sci_name = row['sci_name']
+            com_name = row['com_name']
+            labels.append((idx, sci_name, com_name))
+    return labels
+
+
+def parse_species_list(species_list_path: Path) -> List[str]:
+    """
+    Parse species list file (one species per line).
+    Lines starting with # are comments. Empty lines are ignored.
+    Species can be scientific name, common name, or "SciName_CommonName" format.
+    """
+    species = []
+    with open(species_list_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                species.append(line)
+    return species
+
+
+def filter_species(
+    input_path: Path,
+    output_path: Path,
+    labels_path: Path,
+    species_list_path: Path,
+    output_labels_path: Optional[Path] = None
+) -> bool:
+    """
+    Filter model to only include specified species.
+    
+    This removes output neurons for species not in the list, reducing model size
+    and potentially improving accuracy for the target species.
+    
+    Args:
+        input_path: Path to input ONNX model
+        output_path: Path to save filtered model
+        labels_path: Path to full labels CSV file
+        species_list_path: Path to text file with species to keep (one per line)
+        output_labels_path: Path to save filtered labels CSV (default: derived from output_path)
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        import onnx
+        import numpy as np
+        from onnx import numpy_helper
+    except ImportError:
+        print("  ERROR: Install onnx and numpy")
+        return False
+    
+    print(f"  Loading species list from {species_list_path}...")
+    target_species = parse_species_list(species_list_path)
+    if not target_species:
+        print("  ERROR: Species list is empty")
+        return False
+    print(f"  Target species count: {len(target_species)}")
+    
+    print(f"  Loading labels from {labels_path}...")
+    all_labels = load_labels(labels_path)
+    print(f"  Total labels in model: {len(all_labels)}")
+    
+    # Match species to indices
+    # Support matching by: scientific name, common name, or "SciName_CommonName" format
+    matched_indices = []
+    matched_labels = []
+    unmatched = []
+    
+    for species in target_species:
+        found = False
+        species_lower = species.lower()
+        
+        for idx, sci_name, com_name in all_labels:
+            # Check various matching formats
+            full_name = f"{sci_name}_{com_name}"
+            if (species_lower == sci_name.lower() or 
+                species_lower == com_name.lower() or
+                species_lower == full_name.lower() or
+                species == full_name):  # Exact match for full format
+                matched_indices.append(idx)
+                matched_labels.append((idx, sci_name, com_name))
+                found = True
+                break
+        
+        if not found:
+            unmatched.append(species)
+    
+    if unmatched:
+        print(f"  WARNING: {len(unmatched)} species not found in labels:")
+        for s in unmatched[:10]:
+            print(f"    - {s}")
+        if len(unmatched) > 10:
+            print(f"    ... and {len(unmatched) - 10} more")
+    
+    if not matched_indices:
+        print("  ERROR: No species matched")
+        return False
+    
+    # Sort indices for consistent ordering
+    sorted_pairs = sorted(zip(matched_indices, matched_labels), key=lambda x: x[0])
+    matched_indices = [p[0] for p in sorted_pairs]
+    matched_labels = [p[1] for p in sorted_pairs]
+    
+    print(f"  Matched {len(matched_indices)} species")
+    
+    # Load model
+    print(f"  Loading model...")
+    model = onnx.load(str(input_path))
+    
+    # Find all weight tensors with the original class count dimension
+    original_num_classes = len(all_labels)
+    new_num_classes = len(matched_indices)
+    
+    # Weight tensors that need to be sliced (first dimension is num_classes)
+    weights_to_slice = [
+        'head.weight',      # [11560, 1280] -> [N, 1280]
+        'head.bias',        # [11560] -> [N]
+        'att_block.att.weight',   # [11560, 2048, 1] -> [N, 2048, 1]
+        'att_block.att.bias',     # [11560] -> [N]
+        'att_block.cla.weight',   # [11560, 2048, 1] -> [N, 2048, 1]
+        'att_block.cla.bias',     # [11560] -> [N]
+        'att_block2.att.weight',  # [11560, 2048, 1] -> [N, 2048, 1]
+        'att_block2.att.bias',    # [11560] -> [N]
+        'att_block2.cla.weight',  # [11560, 2048, 1] -> [N, 2048, 1]
+        'att_block2.cla.bias',    # [11560] -> [N]
+    ]
+    
+    print(f"  Slicing weights from {original_num_classes} to {new_num_classes} classes...")
+    
+    # Create index array for slicing
+    indices = np.array(matched_indices, dtype=np.int64)
+    
+    # Process initializers (weights)
+    new_initializers = []
+    sliced_count = 0
+    
+    for init in model.graph.initializer:
+        if init.name in weights_to_slice:
+            # Convert to numpy array
+            arr = numpy_helper.to_array(init)
+            
+            # Verify first dimension matches expected class count
+            if arr.shape[0] != original_num_classes:
+                print(f"    WARNING: {init.name} has unexpected shape {arr.shape}, skipping")
+                new_initializers.append(init)
+                continue
+            
+            # Slice to keep only target species
+            new_arr = arr[indices]
+            
+            # Convert back to tensor
+            new_init = numpy_helper.from_array(new_arr, name=init.name)
+            new_initializers.append(new_init)
+            sliced_count += 1
+            print(f"    {init.name}: {arr.shape} -> {new_arr.shape}")
+        else:
+            new_initializers.append(init)
+    
+    print(f"  Sliced {sliced_count} weight tensors")
+    
+    # Update model initializers
+    del model.graph.initializer[:]
+    model.graph.initializer.extend(new_initializers)
+    
+    # Update output shape for predictions
+    for output in model.graph.output:
+        if output.name == 'predictions':
+            # Update the dimension
+            for dim in output.type.tensor_type.shape.dim:
+                if dim.dim_value == original_num_classes:
+                    dim.dim_value = new_num_classes
+                    print(f"  Updated predictions output shape to {new_num_classes}")
+    
+    # Clear intermediate value_info shapes (may have cached old dimensions)
+    while len(model.graph.value_info) > 0:
+        model.graph.value_info.pop()
+    
+    # Save filtered model
+    print(f"  Saving filtered model to {output_path}...")
+    onnx.save(model, str(output_path))
+    print(f"  Saved: {output_path} ({get_model_size(output_path)})")
+    
+    # Save filtered labels
+    if output_labels_path is None:
+        output_labels_path = output_path.parent / output_path.name.replace('.onnx', '_Labels.csv')
+    
+    print(f"  Saving filtered labels to {output_labels_path}...")
+    import csv
+    with open(output_labels_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f, delimiter=';')
+        writer.writerow(['idx', 'id', 'sci_name', 'com_name', 'class', 'order'])
+        
+        # Re-read original labels to get full row data (use utf-8-sig to handle BOM)
+        with open(labels_path, 'r', encoding='utf-8-sig') as orig:
+            reader = csv.DictReader(orig, delimiter=';')
+            all_rows = {int(row['idx']): row for row in reader}
+        
+        # Write matched labels with new indices
+        for new_idx, orig_idx in enumerate(matched_indices):
+            if orig_idx in all_rows:
+                row = all_rows[orig_idx]
+                writer.writerow([
+                    new_idx,
+                    row.get('id', ''),
+                    row['sci_name'],
+                    row['com_name'],
+                    row.get('class', ''),
+                    row.get('order', '')
+                ])
+    
+    print(f"  Saved: {output_labels_path}")
+    print(f"  Species reduction: {original_num_classes} -> {new_num_classes} ({100*(1-new_num_classes/original_num_classes):.1f}% fewer)")
+    
+    return True
 
 
 def optimize_graph(input_path: Path, output_path: Path) -> bool:
@@ -446,6 +677,10 @@ Examples:
   python convert.py model.onnx --fp16
   python convert.py model.onnx --fp16 --validate
   python convert.py model.onnx --all --output-dir ./optimized/
+  
+  # Filter to specific species (creates smaller, specialized model)
+  python convert.py model.onnx --species-list my_species.txt --labels labels.csv
+  python convert.py model.onnx --species-list my_species.txt --labels labels.csv --fp16
         """
     )
     parser.add_argument("input", type=Path, help="Input ONNX model path")
@@ -460,6 +695,8 @@ Examples:
     parser.add_argument("--all", action="store_true", help="Generate all variants (FP16, INT8, optimized)")
     parser.add_argument("--validate", action="store_true", help="Validate converted models")
     parser.add_argument("--fp16-io", action="store_true", help="Also convert inputs/outputs to FP16")
+    parser.add_argument("--species-list", type=Path, help="Filter model to only include species in this file (one per line)")
+    parser.add_argument("--labels", type=Path, help="Path to labels CSV file (required with --species-list)")
     
     args = parser.parse_args()
     
@@ -476,6 +713,17 @@ Examples:
     # Set output directory
     output_dir = args.output_dir or args.input.parent
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Validate species filtering arguments
+    if args.species_list and not args.labels:
+        print("ERROR: --labels is required when using --species-list")
+        sys.exit(1)
+    if args.species_list and not args.species_list.exists():
+        print(f"ERROR: Species list file not found: {args.species_list}")
+        sys.exit(1)
+    if args.labels and not args.labels.exists():
+        print(f"ERROR: Labels file not found: {args.labels}")
+        sys.exit(1)
     
     # Get base name
     stem = args.input.stem
@@ -495,21 +743,43 @@ Examples:
         args.int8 = True
         args.optimize = True
     
-    # If no conversion specified, show help
-    if not any([args.fp16, args.int8, args.int8_static, args.optimize, args.ort]):
+    # If no conversion specified and no species filtering, show help
+    if not any([args.fp16, args.int8, args.int8_static, args.optimize, args.ort, args.species_list]):
         parser.print_help()
-        print("\nERROR: Specify at least one conversion: --fp16, --int8, --optimize, --ort, or --all")
+        print("\nERROR: Specify at least one conversion: --fp16, --int8, --optimize, --ort, --species-list, or --all")
         sys.exit(1)
     
+    # Working model path (may change after species filtering)
+    working_path = args.input
+    
+    # 0. Species filtering (do first, use filtered model for all other conversions)
+    if args.species_list:
+        print("[0/4] Species Filtering")
+        
+        # Determine output name based on species list file name
+        species_list_name = args.species_list.stem
+        filtered_stem = f"{stem.replace('_FP32', '')}_{species_list_name}"
+        filtered_output = output_dir / f"{filtered_stem}.onnx"
+        
+        if filter_species(args.input, filtered_output, args.labels, args.species_list):
+            results.append(("Filtered", filtered_output))
+            # Use filtered model for further conversions
+            working_path = filtered_output
+            stem = filtered_stem
+        else:
+            print("  Species filtering failed, aborting.")
+            sys.exit(1)
+        print()
+    
     # 1. Graph optimization (do first, use as input for further conversions)
-    optimized_path = args.input
+    optimized_path = working_path
     if args.optimize:
         print("[1/4] Graph Optimization")
         opt_output = output_dir / make_output_name(stem, "optimized")
-        if optimize_graph(args.input, opt_output):
+        if optimize_graph(working_path, opt_output):
             results.append(("Optimized", opt_output))
             if args.validate:
-                validate_model(opt_output, args.input)
+                validate_model(opt_output, working_path)
             # Use optimized model for further conversions
             optimized_path = opt_output
         print()
@@ -521,7 +791,7 @@ Examples:
         if convert_to_fp16(optimized_path, fp16_output, keep_io_fp32=not args.fp16_io):
             results.append(("FP16", fp16_output))
             if args.validate:
-                validate_model(fp16_output, args.input)
+                validate_model(fp16_output, working_path)
         print()
     
     # 3. INT8 dynamic quantization
@@ -531,7 +801,7 @@ Examples:
         if quantize_int8_dynamic(optimized_path, int8_output):
             results.append(("INT8", int8_output))
             if args.validate:
-                validate_model(int8_output, args.input)
+                validate_model(int8_output, working_path)
         print()
     
     # 4. INT8 static quantization
@@ -541,7 +811,7 @@ Examples:
         if quantize_int8_static(optimized_path, int8s_output, args.calibration_dir):
             results.append(("INT8-Static", int8s_output))
             if args.validate:
-                validate_model(int8s_output, args.input)
+                validate_model(int8s_output, working_path)
         print()
     
     # 5. ORT format

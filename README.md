@@ -36,6 +36,7 @@ Analyze audio with BirdNET+ V3.0 developer preview models. This repository provi
   - [Option B: Streamlit Web App](#option-b-streamlit-web-app-apppy)
   - [Option C: Browser Demo](#option-c-browser-demo-web-demo)
 - [Model Conversion](#model-conversion-optional)
+  - [Species Filtering](#species-filtering-optional)
 - [Installation Details](#installation-details)
 - [License](#license)
 - [Terms of Use](#terms-of-use)
@@ -186,6 +187,55 @@ python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp
 ```
 
 Output files use the same naming pattern: `..._FP16.onnx`
+
+### Species Filtering (Optional)
+
+Create a smaller, specialized model by filtering to only the species you need:
+
+```bash
+# Create a species list file (one species per line)
+cat > my_species.txt << EOF
+Cyanocitta cristata_Blue Jay
+Poecile atricapillus_Black-capped Chickadee
+Turdus migratorius_American Robin
+Junco hyemalis_Dark-eyed Junco
+EOF
+
+# Filter model to only include these species
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx \
+    --species-list my_species.txt \
+    --labels models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv
+
+# Combine with FP16 for maximum compression
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx \
+    --species-list my_species.txt \
+    --labels models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv \
+    --fp16 --fp16-io
+```
+
+**Output files:**
+- `..._<species_list_name>.onnx` - Filtered model
+- `..._<species_list_name>_Labels.csv` - Corresponding labels file
+- `..._<species_list_name>_FP16.onnx` - Filtered + FP16 (if requested)
+
+**Species list format:**
+- One species per line
+- Use `SciName_CommonName` format (e.g., `Cyanocitta cristata_Blue Jay`)
+- Also accepts just scientific name or common name
+- Lines starting with `#` are comments
+
+**Size reduction examples:**
+| Species Count | FP32 Size | FP16 Size | vs Full FP32 |
+|---------------|-----------|-----------|--------------|
+| 11,560 (full) | 516 MB | 259 MB | baseline |
+| 9,834 (birds only) | 454 MB | 228 MB | -56% |
+| 5,000 | 279 MB | 140 MB | -73% |
+| 1,000 | 134 MB | 68 MB | -87% |
+| 500 | 116 MB | 59 MB | -89% |
+| 100 | 102 MB | 52 MB | -90% |
+| 10 | 99 MB | 50 MB | -90% |
+
+> **Note:** The base model (backbone) is ~98 MB. Filtering removes only the classification head weights, so even a 10-species model is still ~99 MB in FP32. Combine with FP16 for maximum compression.
 
 ---
 
