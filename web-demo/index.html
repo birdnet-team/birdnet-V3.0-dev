@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <title>BirdNET+ V3.0 Web Demo</title>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900 text-sm">
+    <div id="app" class="flex flex-col min-h-screen">
+      
+      <!-- Header -->
+      <header class="flex items-center gap-3 h-14 px-4 bg-white border-b border-slate-200">
+        <img src="/logo.png" alt="BirdNET Logo" class="w-8 h-8 rounded-full" />
+        <span class="font-semibold">BirdNET+ V3.0 <span class="font-normal text-slate-500">Web Demo</span></span>
+      </header>
+
+      <!-- Main Content -->
+      <main class="flex-1 p-4 max-w-4xl mx-auto w-full space-y-4">
+        
+        <!-- Status & Settings Card -->
+        <div class="bg-white rounded-lg border border-slate-200 p-4 space-y-4">
+          
+          <!-- Status -->
+          <div class="flex flex-wrap gap-2">
+            <span id="model-status" class="px-2 py-1 text-xs font-medium rounded-full bg-slate-100 text-slate-600 border border-slate-200 status-pill-bad">Model not loaded</span>
+            <span id="provider-status" class="px-2 py-1 text-xs font-medium rounded-full bg-slate-100 text-slate-600 border border-slate-200">Provider: auto</span>
+          </div>
+
+          <!-- Settings Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label class="flex flex-col gap-1">
+              <span class="text-xs text-slate-500">Model format</span>
+              <select id="model-format" class="h-9 px-2 border border-slate-200 rounded text-sm bg-white">
+                <option value="FP32" selected>FP32 (516 MB)</option>
+                <!-- FP16 requires local conversion: python convert.py ... --fp16 (without --fp16-io) -->
+                <option value="FP16">FP16 (258 MB)</option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-xs text-slate-500">Chunk (s)</span>
+              <input id="chunk-length" class="h-9 px-2 border border-slate-200 rounded text-sm" type="number" min="0.5" max="30" step="0.5" value="3" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-xs text-slate-500">Overlap (s)</span>
+              <input id="overlap" class="h-9 px-2 border border-slate-200 rounded text-sm" type="number" min="0" max="29.5" step="0.5" value="0" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-xs text-slate-500">Batch size</span>
+              <input id="batch-size" class="h-9 px-2 border border-slate-200 rounded text-sm" type="number" min="1" max="128" step="1" value="1" />
+            </label>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label class="flex flex-col gap-1">
+              <span class="text-xs text-slate-500">Min confidence</span>
+              <input id="min-conf" class="h-9 px-2 border border-slate-200 rounded text-sm" type="number" min="0" max="1" step="0.01" value="0.25" />
+            </label>
+          </div>
+
+          <!-- Model URLs (collapsed by default on mobile) -->
+          <details class="text-xs">
+            <summary class="cursor-pointer text-slate-500 hover:text-slate-700">Custom model sources</summary>
+            <div class="mt-2 space-y-2">
+              <input id="model-url" class="w-full h-8 px-2 border border-slate-200 rounded text-xs" type="url" placeholder="Custom model URL (leave empty to use format selector)" />
+              <input id="labels-url" class="w-full h-8 px-2 border border-slate-200 rounded text-xs" type="url" value="/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv" placeholder="Labels URL" />
+              <div class="flex gap-2">
+                <input id="local-model" class="flex-1 text-xs" type="file" accept=".onnx" />
+                <input id="local-labels" class="flex-1 text-xs" type="file" accept=".csv" />
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Audio Upload -->
+        <div class="bg-white rounded-lg border border-slate-200 p-4">
+          <div id="dropzone" class="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-teal-500 hover:bg-teal-50 transition-colors">
+            <input id="audio-file" type="file" accept=".wav,.mp3,.ogg,.flac,.m4a" class="hidden" />
+            <svg class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+            <p class="font-medium">Drop audio file or click to upload</p>
+            <p class="text-xs text-slate-400">WAV, MP3, OGG, FLAC, M4A</p>
+            <small id="audio-meta" class="text-xs text-slate-500">No file loaded</small>
+          </div>
+
+          <!-- File info (shown after upload) -->
+          <div id="file-info-bar" class="hidden mt-3 flex items-center gap-3 p-2 bg-slate-50 rounded">
+            <span id="file-info-name" class="flex-1 truncate font-medium">filename.mp3</span>
+            <span id="file-info-size" class="text-xs text-slate-400">(0 MB)</span>
+            <button id="change-file-btn" class="text-xs text-teal-600 hover:underline">Change</button>
+          </div>
+
+          <!-- Spectrogram -->
+          <div id="spectrogram-section" class="hidden mt-4">
+            <div class="rounded-lg overflow-hidden bg-slate-900">
+              <canvas id="spectrogram" class="w-full h-40" width="900" height="160"></canvas>
+            </div>
+          </div>
+
+          <!-- Audio Player -->
+          <div id="audio-controls" class="hidden mt-4 space-y-2">
+            <audio id="audio-player" class="w-full" controls preload="metadata"></audio>
+            <div class="flex justify-between text-xs text-slate-400">
+              <span id="audio-time">00:00 / 00:00</span>
+              <span id="segment-status"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2">
+          <button id="run-inference" class="flex-1 h-10 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Run Analysis</button>
+          <button id="download-csv" class="h-10 px-4 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Download CSV</button>
+        </div>
+        <p id="run-status" class="text-sm text-slate-400">Upload an audio file to begin.</p>
+
+        <!-- Results -->
+        <div id="results-section" class="hidden bg-white rounded-lg border border-slate-200 p-4">
+          <h2 class="font-semibold mb-3">Detection Results</h2>
+          <div class="overflow-auto max-h-80 border border-slate-200 rounded-lg">
+            <table id="detections-table" class="w-full text-sm">
+              <thead class="bg-slate-50 sticky top-0">
+                <tr>
+                  <th class="text-left p-2 text-xs font-semibold text-slate-500 border-b border-slate-200">Start</th>
+                  <th class="text-left p-2 text-xs font-semibold text-slate-500 border-b border-slate-200">End</th>
+                  <th class="text-left p-2 text-xs font-semibold text-slate-500 border-b border-slate-200">Scientific</th>
+                  <th class="text-left p-2 text-xs font-semibold text-slate-500 border-b border-slate-200">Common</th>
+                  <th class="text-left p-2 text-xs font-semibold text-slate-500 border-b border-slate-200">Conf</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p id="detections-note" class="text-slate-400 text-sm mt-2"></p>
+          <p class="text-xs text-slate-400">Click a row to play segment.</p>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

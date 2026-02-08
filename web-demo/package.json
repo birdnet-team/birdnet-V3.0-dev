@@ -1,0 +1,26 @@
+{
+  "name": "birdnet-web-demo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/copy-ort-wasm.js",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-ort-wasm.js",
+    "build": "vite build",
+    "prepreview": "node scripts/copy-ort-wasm.js",
+    "preview": "vite preview",
+    "postinstall": "node scripts/copy-ort-wasm.js"
+  },
+  "dependencies": {
+    "fft.js": "4.0.4",
+    "onnxruntime-web": "1.19.2"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.24",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "typescript": "5.4.5",
+    "vite": "5.4.2"
+  }
+}

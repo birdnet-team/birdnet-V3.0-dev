@@ -1,149 +1,273 @@
 <div align="center"><img width="300" alt="BirdNET+ logo" src="img/logo-birdnet-circle.png"></div>
 
-# birdnet-V3.0-dev
-CLI to analyze audio with BirdNET+ V3.0 developer preview models and export of per-chunk detections. Use for experimentation and exploration of the new model architecture and capabilities.
+# BirdNET+ V3.0 Developer Preview
 
-We will release updated models, labels, and code as we finalize the V3.0 release.
+Analyze audio with BirdNET+ V3.0 developer preview models. This repository provides multiple ways to run the model:
 
-**Most recent version:**
-- BirdNET+ V3.0 Developer Preview 3 - 11K Species (Jan 2026)
-- Improves model performance despite larger species set
-- Still lacks a noise fallback class, to be added in future releases
-- Species list needs a cleanup and includes some weird entries
-- [Download model and labels from Zenodo](https://zenodo.org/records/18247420)
+| Tool | Description | Best For |
+|------|-------------|----------|
+| `analyze.py` | Command-line batch processing | Processing many files, scripting |
+| `app.py` | Streamlit interactive UI | Quick experimentation, visualization |
+| `web-demo/` | Browser-only demo (ONNX) | Sharing, no Python needed |
 
-**Key changes vs 2.X model versions:**
-- Variable-length input (removed fixed 3 s constraint)
-- Model takes 32 kHz audio input (compared to 48 kHz previously)
-- Improved architecture and training procedure
-- Much larger and more diverse training dataset
-- Expanded set of non-bird species
+### About This Release
 
-**Pending revisions:**
-- Cross-platform / cross-framework packaging
-- Species list curation (inclusion/exclusion based on data availability)
-- Final architecture and model size
-- Additional non-target / environmental classes (human, rain, wind, engines, etc.)
+**Current version:** Developer Preview 3 - 11K Species (Jan 2026)
 
-**Known issues:**
-- no human voice detection yet
-- the model struggles a bit with non-target sounds like rain, wind, engines (which it is not yet trained for)
+**Key changes vs 2.X:**
+- Variable-length input (removed fixed 3s constraint)
+- 32 kHz audio input (was 48 kHz)
+- Improved architecture and training
+- Larger, more diverse training dataset
+- Expanded non-bird species
 
-### ⚠️ **Note:** This is a developer preview; models, labels, and code will change. Trained on a subset of data and may not reflect final performance.
+**Known limitations:**
+- No human voice detection yet
+- Limited non-target sound handling (rain, wind, engines)
+- Species list needs cleanup
 
-## Install for Mac / Linux
+> ⚠️ **Developer Preview Notice:** Models, labels, and code will change before final release.
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Tools Overview](#tools-overview)
+  - [Option A: Command-Line Analysis](#option-a-command-line-analysis-analyzepy)
+  - [Option B: Streamlit Web App](#option-b-streamlit-web-app-apppy)
+  - [Option C: Browser Demo](#option-c-browser-demo-web-demo)
+- [Model Conversion](#model-conversion-optional)
+  - [Species Filtering](#species-filtering-optional)
+- [Installation Details](#installation-details)
+- [License](#license)
+- [Terms of Use](#terms-of-use)
+- [Citation](#citation)
+- [Funding](#funding)
+- [Partners](#partners)
+
+---
+
+## Quick Start
+
 ```bash
+# 1. Clone and setup
+git clone https://github.com/birdnet-team/birdnet-V3.0-dev.git
+cd birdnet-V3.0-dev
+
+# 2. Create virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Mac/Linux
+# .venv\Scripts\activate         # Windows
+
+# 3. Install dependencies  
 pip install -r requirements.txt
-```
-## Install for Windows
-```bash
-python3 -m venv .venv
-source .venv/Scripts/activate
-pip install -r requirements.txt
+
+# 4. Run analysis (model downloads automatically on first run)
+python analyze.py example/soundscape.wav
 ```
 
-### Optionally, on Windows, enable CUDA support
-This option requires you have an NVIDIA GPU with CUDA installed and visible to the environment, check for this by typing:
-```bash
-nvidia-smi
-```
-You should see a table showing information about your CUDA version and running processes:
-![alt text](image.png)
+---
 
-If you do, then you can install a CUDA-enabled version of pyTorch:
+## Tools Overview
 
-```bash
-pip install -U torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
+### Option A: Command-Line Analysis (`analyze.py`)
 
-
-## Usage
-
-Upon first run, the default model and labels will be automatically downloaded to the `models/` directory. You can download them manually from [Zenodo](https://zenodo.org/records/18247420).
-
-Run the analysis with:
+Best for batch processing and scripting.
 
 ```bash
 python analyze.py /path/to/audio.wav
 ```
 
-### Options
-- `--model` Path to model file (default: models/BirdNET+_V3.0-preview3_Global_11K_FP32.pt)
-- `--labels` Path to labels CSV (default: models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv)
-- `--chunk_length` Chunk length in seconds (default: 3.0)
-- `--overlap` Chunk overlap in seconds (default: 0.0)
-- `--device` cpu|cuda (default: auto)
-- `--min-conf` Minimum confidence threshold for exporting detections (default: 0.15)
-- `--out-csv` Output CSV path (default: <audio>.results.csv)
-- `--export-embeddings` Export per-chunk embeddings as additional column in results CSV
+**Options:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | PyTorch FP32 | Path to model (.pt or .onnx) |
+| `--chunk_length` | 3.0 | Chunk length in seconds |
+| `--overlap` | 0.0 | Chunk overlap in seconds |
+| `--min-conf` | 0.15 | Minimum confidence threshold |
+| `--device` | auto | `cpu` or `cuda` |
+| `--out-csv` | `<audio>.results.csv` | Output CSV path |
+| `--export-embeddings` | false | Include embeddings in output |
 
-### Output
-- Per-chunk CSV with columns: `name,start_sec,end_sec,confidence,label` and optionally `embeddings`
-- One row per (chunk, label) with confidence ≥ `--min-conf`
-- Multiple rows per chunk if multiple labels exceed threshold
-
-
-## Examples
+**Examples:**
 ```bash
-# Minimal (uses defaults where available)
+# Basic usage (PyTorch model, downloads automatically)
 python analyze.py example/soundscape.wav
 
-# Specify model, chunk length, min confidence, and output CSV with embeddings
-python analyze.py example/soundscape.wav --chunk_length 2.0 --min-conf 0.2 --out-csv results.csv --export-embeddings
+# Use FP16 ONNX model (recommended: smaller, same accuracy)
+python analyze.py example/soundscape.wav --model models/BirdNET+_V3.0-preview3_Global_11K_FP16.onnx
 
-# Specify model and run on CUDA-enabled GPU
-python analyze.py example/soundscape.wav --model models/BirdNET+_V3.0-preview3_Global_11K_FP32.pt --device cuda
+# Custom settings
+python analyze.py example/soundscape.wav --chunk_length 2.0 --min-conf 0.2 --out-csv results.csv
+
+# Use GPU
+python analyze.py example/soundscape.wav --device cuda
 ```
 
-**Note:** The minimal model call will return embeddings and predictions for all chunks and needs to look like this:
+**Output:** CSV with columns `name, start_sec, end_sec, confidence, label` (+ `embeddings` if requested)
 
-```python
-embeddings, predictions = model(input)
-```
+---
 
-## Streamlit web app
+### Option B: Streamlit Web App (`app.py`)
 
-For quick experimentation, we provide an interactive UI to upload audio, view a spectrogram, run the model, and visualize results.
+Best for interactive exploration with visual feedback.
 
 ![Streamlit app screenshot](img/streamlit-ui-screenshot.png)
 
-
-### Start the app
 ```bash
-# Activate your venv first if you use one
-source .venv/bin/activate
-# N.B. On Windows use:
-source .venv/Scripts/activate
-
-# Run Streamlit
+# Start the app
 streamlit run app.py
 
-# Alternatively, to increase 200 MB files size limit to e.g. 2GB
+# Or with larger file upload limit (e.g., 2GB)
 streamlit run app.py --server.maxUploadSize 2048
-
 ```
 
-- The app opens in your browser (usually http://localhost:8501).
-- On first run, if you keep the default paths, the model and labels will be downloaded into models.
+Opens at http://localhost:8501
 
-### Headless/server usage (Linux):
+**Features:**
+- Upload audio (wav, mp3, ogg, flac, m4a)
+- View mel spectrogram
+- Select model format (FP32/FP16/INT8 ONNX)
+- Adjust chunk length, overlap, confidence threshold
+- Download results as CSV
+
+**Headless/server mode:**
 ```bash
 streamlit run app.py --server.address 0.0.0.0 --server.port 8501
-# then open http://<server-ip>:8501 in your browser
 ```
 
-### How to use
-- Upload an audio file (wav, mp3, ogg, flac, m4a).
-- Adjust settings in the sidebar:
-  - Chunk length (s), Overlap (s)
-  - Min confidence threshold
-  - Device (cpu/cuda, if available)
-- The app will:
-  - Render a mel spectrogram of the audio
-  - Show an overall bar chart of aggregated scores (top-N)
-  - List per-chunk detections (sorted by score) with a Download CSV button
+---
+
+### Option C: Browser Demo (`web-demo/`)
+
+Runs entirely in the browser using ONNX Runtime Web. No Python required after build.
+
+```bash
+cd web-demo
+
+# Download model and labels (one-time setup)
+./scripts/download-model.sh     # Mac/Linux
+# .\scripts\download-model.ps1  # Windows
+
+# Install and run
+npm install
+npm run dev
+```
+
+Opens at http://localhost:5173
+
+**Using FP16 for smaller download:** The default download is FP32 (516 MB). To use FP16 (259 MB), convert locally with `python convert.py ... --fp16` (without `--fp16-io`) and copy to `web-demo/public/assets/`. Do not use `--fp16-io` as browser WebGL doesn't support float16 I/O.
+
+**Build for deployment:**
+```bash
+npm run build
+npm run preview
+```
+
+---
+
+## Model Conversion (Optional)
+
+Convert the FP32 ONNX model to smaller formats for faster loading:
+
+| Format | Size | Accuracy | Recommendation |
+|--------|------|----------|----------------|
+| FP32 | 516 MB | Baseline | Development/reference |
+| FP16 | 259 MB | **Identical to FP32** | **Recommended for production** |
+| INT8-head | 245 MB | **Identical to FP32** | Moderate size reduction |
+| INT8 (full) | 131 MB | ⚠️ **Unreliable** | Not recommended |
+
+> ⚠️ **Full INT8 Warning:** Full INT8 quantization produces many false positives due to error accumulation in the backbone layers. Use `--int8-head` for reliable INT8 or `--fp16` for best results.
+
+```bash
+# Convert to FP16 (recommended - use --fp16-io for ONNX Runtime compatibility)
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp16-io
+
+# Convert to INT8 head-only (reliable, 52% size reduction)
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --int8-head
+
+# Show model info
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --info
+
+# Convert with validation
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp16-io --validate
+```
+
+> **Note on `--fp16-io`:** The `--fp16-io` flag converts model inputs/outputs to float16, which improves performance in ONNX Runtime but is not supported by browser WebGL. Use `--fp16` without `--fp16-io` for the web-demo.
+
+Output files use the same naming pattern: `..._FP16.onnx`
+
+### Species Filtering (Optional)
+
+Create a smaller, specialized model by filtering to only the species you need:
+
+```bash
+# Create a species list file (one species per line)
+cat > my_species.txt << EOF
+Cyanocitta cristata_Blue Jay
+Poecile atricapillus_Black-capped Chickadee
+Turdus migratorius_American Robin
+Junco hyemalis_Dark-eyed Junco
+EOF
+
+# Filter model to only include these species
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx \
+    --species-list my_species.txt \
+    --labels models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv
+
+# Combine with FP16 for maximum compression
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx \
+    --species-list my_species.txt \
+    --labels models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv \
+    --fp16 --fp16-io
+```
+
+**Output files:**
+- `..._<species_list_name>.onnx` - Filtered model
+- `..._<species_list_name>_Labels.csv` - Corresponding labels file
+- `..._<species_list_name>_FP16.onnx` - Filtered + FP16 (if requested)
+
+**Species list format:**
+- One species per line
+- Use `SciName_CommonName` format (e.g., `Cyanocitta cristata_Blue Jay`)
+- Also accepts just scientific name or common name
+- Lines starting with `#` are comments
+
+**Size reduction examples:**
+| Species Count | FP32 Size | FP16 Size | vs Full FP32 |
+|---------------|-----------|-----------|--------------|
+| 11,560 (full) | 516 MB | 259 MB | baseline |
+| 9,834 (birds only) | 454 MB | 228 MB | -56% |
+| 5,000 | 279 MB | 140 MB | -73% |
+| 1,000 | 134 MB | 68 MB | -87% |
+| 500 | 116 MB | 59 MB | -89% |
+| 100 | 102 MB | 52 MB | -90% |
+| 10 | 99 MB | 50 MB | -90% |
+
+> **Note:** The base model (backbone) is ~98 MB. Filtering removes only the classification head weights, so even a 10-species model is still ~99 MB in FP32. Combine with FP16 for maximum compression.
+
+---
+
+## Installation Details
+
+### Windows with CUDA (Optional)
+
+If you have an NVIDIA GPU, enable CUDA support:
+
+```bash
+# Check CUDA availability
+nvidia-smi
+
+# Install CUDA-enabled PyTorch
+pip install -U torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+### Model Download
+
+Models are downloaded automatically on first run. To download manually:
+- [Download from Zenodo](https://zenodo.org/records/18247420)
+- Place in `models/` directory
+
+---
 
 ## License
 

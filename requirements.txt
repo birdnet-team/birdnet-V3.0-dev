@@ -6,3 +6,8 @@ scipy>=1.10
 pandas>=2.0
 matplotlib>=3.7
 streamlit>=1.32
+
+# Model conversion (convert.py)
+onnx>=1.14.0
+onnxruntime>=1.16.0
+onnxconverter-common>=1.13.0

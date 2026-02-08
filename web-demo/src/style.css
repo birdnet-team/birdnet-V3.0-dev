@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Only styles needed for JS-toggled states */
+.status-pill-ok { @apply bg-emerald-50 text-emerald-700 border-emerald-200; }
+.status-pill-bad { @apply bg-red-50 text-red-700 border-red-200; }
+.status-pill-warn { @apply bg-amber-50 text-amber-700 border-amber-200; }
+.dragover { @apply border-teal-500 bg-teal-50 border-solid; }
+.table-row-active { @apply bg-teal-50; }
+.btn-loading { @apply relative text-transparent pointer-events-none; }
+.btn-loading::after { content: "..."; @apply absolute inset-0 flex items-center justify-center text-white animate-pulse; }
