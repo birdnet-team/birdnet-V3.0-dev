@@ -155,6 +155,8 @@ npm run dev
 
 Opens at http://localhost:5173
 
+**Using FP16 for smaller download:** The default download is FP32 (516 MB). To use FP16 (259 MB), convert locally with `python convert.py ... --fp16` (without `--fp16-io`) and copy to `web-demo/public/assets/`. Do not use `--fp16-io` as browser WebGL doesn't support float16 I/O.
+
 **Build for deployment:**
 ```bash
 npm run build
@@ -173,7 +175,7 @@ Convert the FP32 ONNX model to smaller formats for faster loading:
 | FP16 | 259 MB | **Identical to FP32** | **Recommended for production** |
 | INT8 | 131 MB | ⚠️ **Unreliable** | Not recommended |
 
-> ⚠️ **INT8 Warning:** INT8 quantization produces many false positives with this model. The 11K-class softmax amplifies small quantization errors, causing hundreds of spurious detections. **Use FP16 instead.**
+> ⚠️ **INT8 Warning:** INT8 quantization still produces many false positives with this model. This conversion needs to be optimized. **Use FP16 instead.**
 
 ```bash
 # Convert to FP16 (recommended - use --fp16-io for ONNX Runtime compatibility)
@@ -185,6 +187,8 @@ python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --info
 # Convert with validation
 python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp16-io --validate
 ```
+
+> **Note on `--fp16-io`:** The `--fp16-io` flag converts model inputs/outputs to float16, which improves performance in ONNX Runtime but is not supported by browser WebGL. Use `--fp16` without `--fp16-io` for the web-demo.
 
 Output files use the same naming pattern: `..._FP16.onnx`
 
