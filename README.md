@@ -173,13 +173,17 @@ Convert the FP32 ONNX model to smaller formats for faster loading:
 |--------|------|----------|----------------|
 | FP32 | 516 MB | Baseline | Development/reference |
 | FP16 | 259 MB | **Identical to FP32** | **Recommended for production** |
-| INT8 | 131 MB | ⚠️ **Unreliable** | Not recommended |
+| INT8-head | 245 MB | **Identical to FP32** | Moderate size reduction |
+| INT8 (full) | 131 MB | ⚠️ **Unreliable** | Not recommended |
 
-> ⚠️ **INT8 Warning:** INT8 quantization still produces many false positives with this model. This conversion needs to be optimized. **Use FP16 instead.**
+> ⚠️ **Full INT8 Warning:** Full INT8 quantization produces many false positives due to error accumulation in the backbone layers. Use `--int8-head` for reliable INT8 or `--fp16` for best results.
 
 ```bash
 # Convert to FP16 (recommended - use --fp16-io for ONNX Runtime compatibility)
 python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp16-io
+
+# Convert to INT8 head-only (reliable, 52% size reduction)
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --int8-head
 
 # Show model info
 python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --info
