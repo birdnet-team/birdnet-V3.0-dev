@@ -28,9 +28,14 @@ import InferenceWorker from "./inference.worker.ts?worker";
 // Configuration
 // -----------------------------------------------------------------------------
 
-/** Default paths for model and labels (relative to public folder) */
-const MODEL_URL_DEFAULT = "/assets/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx";
+/** Model base name (without precision suffix) */
+const MODEL_BASE = "/assets/BirdNET+_V3.0-preview3_Global_11K";
 const LABELS_URL_DEFAULT = "/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv";
+
+/** Get model URL for a given format */
+function getModelUrl(format: string): string {
+  return `${MODEL_BASE}_${format}.onnx`;
+}
 
 /** Maximum rows to display in detection table (for performance) */
 const MAX_TABLE_ROWS = 500;
@@ -76,6 +81,7 @@ const elements = {
   audioTime: $<HTMLSpanElement>("audio-time")!,
 
   // Model settings
+  modelFormat: $<HTMLSelectElement>("model-format")!,
   chunkLength: $<HTMLInputElement>("chunk-length")!,
   overlap: $<HTMLInputElement>("overlap")!,
   batchSize: $<HTMLInputElement>("batch-size")!,
@@ -422,8 +428,9 @@ async function loadModel(): Promise<void> {
         labelsText
       });
     } else {
-      // Load from URLs
-      const modelUrl = elements.modelUrl.value || MODEL_URL_DEFAULT;
+      // Load from URLs - use custom URL if provided, otherwise use format selector
+      const customModelUrl = elements.modelUrl.value.trim();
+      const modelUrl = customModelUrl || getModelUrl(elements.modelFormat.value);
       const labelsUrl = elements.labelsUrl.value || LABELS_URL_DEFAULT;
       result = await callWorker<WorkerLoadModelResult>({
         type: "loadModel",
@@ -570,6 +577,15 @@ async function handleAudioFile(file?: File): Promise<void> {
 // Dropzone: click to open file picker
 elements.dropzone.addEventListener("click", () => {
   elements.audioFile.click();
+});
+
+// Model format change: reset model so it reloads on next run
+elements.modelFormat.addEventListener("change", () => {
+  if (modelReady) {
+    modelReady = false;
+    setModelStatus("Format changed - click Run to load", false);
+    setStatus("Model format changed. Click Run Inference to load the new model.");
+  }
 });
 
 // Dropzone: visual feedback on drag

@@ -13,6 +13,13 @@ import urllib.error
 import tempfile
 import shutil
 
+# Optional ONNX Runtime support
+try:
+    import onnxruntime as ort
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+
 SR = 32000  # model expects 32 kHz
 
 # Defaults and hardcoded URLs (replace with actual links)
@@ -133,6 +140,61 @@ def run_inference(
     return predictions, embeddings
 
 
+def run_onnx_inference(
+    session: "ort.InferenceSession",
+    chunks: np.ndarray,
+    batch_size: int = 16,
+    return_embeddings: bool = False,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """
+    Run inference with ONNX model.
+    
+    Args:
+        session: ONNX Runtime inference session.
+        chunks: [N, T] float32 mono audio.
+        batch_size: batch size.
+        return_embeddings: if True, also return stacked embeddings [N, D].
+    
+    Returns:
+        predictions: [N, C] float32
+        embeddings: [N, D] float32 or None
+    """
+    if chunks.shape[0] == 0:
+        return np.zeros((0, 0), dtype=np.float32), None
+    
+    # Get input/output info
+    input_name = session.get_inputs()[0].name
+    input_type = session.get_inputs()[0].type
+    output_names = [o.name for o in session.get_outputs()]
+    
+    # Determine input dtype (handle FP16 models)
+    if "float16" in input_type:
+        input_dtype = np.float16
+    else:
+        input_dtype = np.float32
+    
+    preds_out: List[np.ndarray] = []
+    embs_out: List[np.ndarray] = []
+    
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i + batch_size].astype(input_dtype)
+        outputs = session.run(output_names, {input_name: batch})
+        
+        # Model outputs: embeddings, predictions (two outputs) or just predictions
+        if len(outputs) == 2:
+            emb, pred = outputs
+            if return_embeddings:
+                embs_out.append(emb.astype(np.float32))
+        else:
+            pred = outputs[0]
+        
+        preds_out.append(pred.astype(np.float32))
+    
+    predictions = np.concatenate(preds_out, axis=0)
+    embeddings = np.concatenate(embs_out, axis=0) if return_embeddings and embs_out else None
+    return predictions, embeddings
+
+
 def save_per_chunk_csv(
     audio_path: str,
     spans: List[Tuple[float, float]],
@@ -224,7 +286,7 @@ def _download_defaults(model_path: str, labels_path: str) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Run BirdNET+ V3.0 preview model on an audio file.")
     parser.add_argument("audio", help="Path to audio file")
-    parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to TorchScript .pt model")
+    parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to model (.pt for PyTorch, .onnx for ONNX)")
     parser.add_argument("--labels", default=DEFAULT_LABELS_PATH, help="Path to labels CSV")
     parser.add_argument("--chunk_length", type=float, default=3.0, help="Chunk length in seconds (default: 3.0)")
     parser.add_argument("--overlap", type=float, default=0.0, help="Chunk overlap in seconds (default: 0.0; must be < chunk_length)")
@@ -234,7 +296,11 @@ def main():
     parser.add_argument("--export-embeddings", action="store_true", help="Include per-chunk embedding vector columns in the output CSV")
     args = parser.parse_args()
     
+    # Detect model type
+    is_onnx = args.model.lower().endswith(".onnx")
+    
     print(f"BirdNET+ V3.0 developer preview run on {args.audio}")
+    print(f"Model type: {'ONNX' if is_onnx else 'PyTorch'}")
 
     # Auto-download defaults if missing
     _download_defaults(args.model, args.labels)
@@ -255,13 +321,32 @@ def main():
         print(f"Error loading labels: {e}", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        device = torch.device(args.device)
-        model = torch.jit.load(args.model, map_location=device)
-        model.eval()
-    except Exception as e:
-        print(f"Error loading model: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Load model based on type
+    if is_onnx:
+        if not ONNX_AVAILABLE:
+            print("Error: ONNX model requires onnxruntime. Install with: pip install onnxruntime", file=sys.stderr)
+            sys.exit(1)
+        try:
+            # Select execution provider based on device
+            if args.device == "cuda":
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            else:
+                providers = ["CPUExecutionProvider"]
+            session = ort.InferenceSession(args.model, providers=providers)
+            # Report actual provider used
+            actual_provider = session.get_providers()[0] if session.get_providers() else "unknown"
+            print(f"ONNX provider: {actual_provider}")
+        except Exception as e:
+            print(f"Error loading ONNX model: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        try:
+            device = torch.device(args.device)
+            model = torch.jit.load(args.model, map_location=device)
+            model.eval()
+        except Exception as e:
+            print(f"Error loading model: {e}", file=sys.stderr)
+            sys.exit(1)
 
     try:
         y, sr = librosa.load(args.audio, sr=SR, mono=True)
@@ -274,9 +359,15 @@ def main():
         print("No audio samples to process.", file=sys.stderr)
         sys.exit(1)
 
-    probs_chunks, embeddings = run_inference(
-        model, chunks, device=device, return_embeddings=args.export_embeddings
-    )
+    # Run inference based on model type
+    if is_onnx:
+        probs_chunks, embeddings = run_onnx_inference(
+            session, chunks, return_embeddings=args.export_embeddings
+        )
+    else:
+        probs_chunks, embeddings = run_inference(
+            model, chunks, device=device, return_embeddings=args.export_embeddings
+        )
 
     out_csv = args.out_csv if args.out_csv else (os.path.splitext(args.audio)[0] + ".results.csv")
     rows = save_per_chunk_csv(
@@ -292,7 +383,7 @@ def main():
 
     print(f"Chunks processed: {len(chunks)}; detections exported: {rows} (min_conf={args.min_conf}, overlap={args.overlap}, export_embeddings={args.export_embeddings})")
     print(f"CSV: {out_csv}")
-    print(f"SR={SR}, Device={device}")
+    print(f"SR={SR}, Device={args.device}")
 
 
 if __name__ == "__main__":
