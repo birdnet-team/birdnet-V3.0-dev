@@ -171,23 +171,40 @@ def filter_species(
     matched_labels = []
     unmatched = []
     
+    # Build lookup dictionaries for efficient matching
+    sci_name_map = {}  # scientific_name -> (idx, sci_name, com_name)
+    com_name_map = {}  # common_name -> (idx, sci_name, com_name)
+    full_name_map = {}  # "SciName_ComName" -> (idx, sci_name, com_name)
+    
+    for idx, sci_name, com_name in all_labels:
+        label_tuple = (idx, sci_name, com_name)
+        sci_name_map[sci_name.lower()] = label_tuple
+        com_name_map[com_name.lower()] = label_tuple
+        full_name_map[f"{sci_name}_{com_name}".lower()] = label_tuple
+    
+    # Match species using lookups
     for species in target_species:
-        found = False
         species_lower = species.lower()
+        label_tuple = None
         
-        for idx, sci_name, com_name in all_labels:
-            # Check various matching formats
-            full_name = f"{sci_name}_{com_name}"
-            if (species_lower == sci_name.lower() or 
-                species_lower == com_name.lower() or
-                species_lower == full_name.lower() or
-                species == full_name):  # Exact match for full format
-                matched_indices.append(idx)
-                matched_labels.append((idx, sci_name, com_name))
-                found = True
-                break
+        # Try direct lookups in order of specificity
+        if species_lower in full_name_map:
+            label_tuple = full_name_map[species_lower]
+        elif species_lower in sci_name_map:
+            label_tuple = sci_name_map[species_lower]
+        elif species_lower in com_name_map:
+            label_tuple = com_name_map[species_lower]
+        elif '_' in species:
+            # Try parsing "SciName_ComName" format
+            parts = species.split('_', 1)
+            sci_lower = parts[0].strip().lower()
+            com_lower = parts[1].strip().lower()
+            label_tuple = sci_name_map.get(sci_lower) or com_name_map.get(com_lower)
         
-        if not found:
+        if label_tuple:
+            matched_indices.append(label_tuple[0])
+            matched_labels.append(label_tuple)
+        else:
             unmatched.append(species)
     
     if unmatched:
