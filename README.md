@@ -155,7 +155,7 @@ npm run dev
 
 Opens at http://localhost:5173
 
-**Using FP16 for smaller download:** The default download is FP32 (516 MB). To use FP16 (259 MB), convert locally with `python convert.py ... --fp16` (without `--fp16-io`) and copy to `web-demo/public/assets/`. Do not use `--fp16-io` as browser WebGL doesn't support float16 I/O.
+**Using FP16 for smaller download:** The default download is FP32 (516 MB). To use FP16 (259 MB), convert locally with `python convert.py ... --fp16` and copy to `web-demo/public/assets/`.
 
 **Build for deployment:**
 ```bash
@@ -179,8 +179,8 @@ Convert the FP32 ONNX model to smaller formats for faster loading:
 > ⚠️ **Full INT8 Warning:** Full INT8 quantization produces many false positives due to error accumulation in the backbone layers. Use `--int8-head` for reliable INT8 or `--fp16` for best results.
 
 ```bash
-# Convert to FP16 (recommended - use --fp16-io for ONNX Runtime compatibility)
-python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp16-io
+# Convert to FP16 (recommended)
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16
 
 # Convert to INT8 head-only (reliable, 52% size reduction)
 python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --int8-head
@@ -189,10 +189,10 @@ python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --int8-head
 python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --info
 
 # Convert with validation
-python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --fp16-io --validate
+python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx --fp16 --validate
 ```
 
-> **Note on `--fp16-io`:** The `--fp16-io` flag converts model inputs/outputs to float16, which improves performance in ONNX Runtime but is not supported by browser WebGL. Use `--fp16` without `--fp16-io` for the web-demo.
+> **Note on `--fp16-io`:** The `--fp16-io` flag converts everything (weights, compute, I/O) to float16. This is **not recommended** — it does **not** work with ONNX Runtime Web (WASM backend has no float16 compute support). The default `--fp16` only stores weights as float16 while keeping all computation in float32, which works with both desktop and web ONNX Runtime.
 
 Output files use the same naming pattern: `..._FP16.onnx`
 
@@ -218,7 +218,7 @@ python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx \
 python convert.py models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx \
     --species-list my_species.txt \
     --labels models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv \
-    --fp16 --fp16-io
+    --fp16
 ```
 
 **Output files:**

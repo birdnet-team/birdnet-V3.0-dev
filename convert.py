@@ -366,10 +366,97 @@ def optimize_graph(input_path: Path, output_path: Path) -> bool:
         return False
 
 
+def _convert_weights_to_fp16(model) -> int:
+    """
+    Convert float32 initializer weights to float16 for storage, keeping the
+    computation graph entirely in float32.
+    
+    For each float32 initializer (weight tensor):
+    1. Convert the data to float16 (halves storage size)
+    2. Rename the initializer to "<name>_fp16"
+    3. Insert a Cast(fp16→fp32) node to convert back to float32 at runtime
+    4. Update the corresponding graph input (if any) to match
+    
+    This gives ~50% model size reduction while keeping all computation in
+    float32, which is compatible with all ONNX Runtime backends including
+    ORT Web WASM (which doesn't support float16 compute).
+    
+    Returns the number of initializers converted.
+    """
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+
+    graph = model.graph
+    cast_nodes = []
+    converted = 0
+
+    # Build set of initializer names that are also graph inputs
+    graph_input_names = {inp.name for inp in graph.input}
+
+    for init in graph.initializer:
+        if init.data_type != TensorProto.FLOAT:
+            continue
+
+        original_name = init.name
+        fp16_name = original_name + "_fp16"
+
+        # Convert weight data to float16
+        arr = numpy_helper.to_array(init)
+        arr_fp16 = arr.astype(np.float16)
+        new_init = numpy_helper.from_array(arr_fp16, fp16_name)
+        init.CopyFrom(new_init)
+
+        # Update corresponding graph input (ONNX convention: initializers
+        # may also appear as graph inputs for shape/type metadata)
+        for inp in graph.input:
+            if inp.name == original_name:
+                inp.name = fp16_name
+                inp.type.tensor_type.elem_type = TensorProto.FLOAT16
+                break
+
+        # Rename references in graph nodes: old initializer name → Cast output
+        # The Cast node will output a float32 tensor with the original name,
+        # so downstream nodes don't need to change at all.
+        # We only rename node inputs that directly reference this initializer.
+        # (The Cast output keeps the original name, making this transparent.)
+
+        # Insert Cast node: fp16 weight → fp32 for computation
+        cast_node = helper.make_node(
+            "Cast",
+            inputs=[fp16_name],
+            outputs=[original_name],
+            to=int(TensorProto.FLOAT),
+            name=f"cast_weight_{original_name}",
+        )
+        cast_nodes.append(cast_node)
+        converted += 1
+
+    # Prepend all Cast nodes to the graph
+    for i, node in enumerate(cast_nodes):
+        graph.node.insert(i, node)
+
+    return converted
+
+
 def convert_to_fp16(input_path: Path, output_path: Path, keep_io_fp32: bool = True) -> bool:
     """
     Convert model weights from FP32 to FP16.
     Roughly halves model size with minimal accuracy loss for most models.
+    
+    Uses "weights-only" FP16: weight tensors are stored as float16 (halving
+    model file size), with Cast nodes to convert back to float32 at runtime.
+    The computation graph stays entirely in float32, ensuring compatibility
+    with all ONNX Runtime backends including ORT Web WASM.
+    
+    When keep_io_fp32=True (default, no --fp16-io):
+      Weights stored as FP16, all computation and I/O stays FP32.
+      Compatible with both desktop and web ONNX Runtime.
+    
+    When keep_io_fp32=False (--fp16-io):
+      Full FP16 conversion (weights, compute, I/O all float16).
+      WARNING: Does NOT work with ONNX Runtime Web (WASM has no float16 compute).
+      Only use for desktop ONNX Runtime with explicit float16 support.
     """
     try:
         import onnx
@@ -383,21 +470,26 @@ def convert_to_fp16(input_path: Path, output_path: Path, keep_io_fp32: bool = Tr
     try:
         model = onnx.load(str(input_path))
         
-        # Clear intermediate shapes to avoid conflicts during conversion
-        while len(model.graph.value_info) > 0:
-            model.graph.value_info.pop()
+        if keep_io_fp32:
+            # Weights-only FP16: convert initializer storage to float16,
+            # keep computation graph as float32. This is compatible with
+            # all backends including ORT Web WASM.
+            count = _convert_weights_to_fp16(model)
+            print(f"  Converted {count} weight tensors to FP16 storage")
+            onnx.save(model, str(output_path))
+        else:
+            # Full FP16: convert everything including compute graph.
+            # Only works with runtimes that support float16 compute.
+            while len(model.graph.value_info) > 0:
+                model.graph.value_info.pop()
+            
+            model_fp16 = float16.convert_float_to_float16(
+                model,
+                keep_io_types=False,
+                disable_shape_infer=True
+            )
+            onnx.save(model_fp16, str(output_path))
         
-        # Convert to FP16
-        # For better compatibility with ONNX Runtime Web, convert everything to FP16
-        # (keep_io_types=False means inputs/outputs also become FP16)
-        model_fp16 = float16.convert_float_to_float16(
-            model,
-            keep_io_types=keep_io_fp32,
-            disable_shape_infer=True,
-            op_block_list=['Softmax', 'LayerNormalization']  # Keep these in FP32 for numerical stability
-        )
-        
-        onnx.save(model_fp16, str(output_path))
         print(f"  Saved: {output_path} ({get_model_size(output_path)})")
         return True
     except Exception as e:

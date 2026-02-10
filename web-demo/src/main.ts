@@ -425,7 +425,8 @@ async function loadModel(): Promise<void> {
       result = await callWorker<WorkerLoadModelResult>({
         type: "loadModel",
         modelBuffer,
-        labelsText
+        labelsText,
+        modelFormat: elements.modelFormat.value
       });
     } else {
       // Load from URLs - use custom URL if provided, otherwise use format selector
@@ -435,7 +436,8 @@ async function loadModel(): Promise<void> {
       result = await callWorker<WorkerLoadModelResult>({
         type: "loadModel",
         modelUrl,
-        labelsUrl
+        labelsUrl,
+        modelFormat: elements.modelFormat.value
       });
     }
 

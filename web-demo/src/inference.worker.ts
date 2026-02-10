@@ -141,12 +141,15 @@ async function loadLabelsFromUrl(url: string): Promise<{
 /**
  * Loads an ONNX inference session with preferred execution provider.
  * Tries WebGL (GPU) first for best performance, falls back to WASM (CPU).
+ * FP16 models use WASM directly (WebGL can't handle float16 weight tensors).
  *
  * @param source - Model URL or ArrayBuffer
+ * @param format - Model precision format (e.g. "FP32", "FP16")
  * @returns Session and provider info
  */
 async function loadModelSession(
-  source: string | ArrayBuffer
+  source: string | ArrayBuffer,
+  format: string = "FP32"
 ): Promise<{
   session: ort.InferenceSession;
   provider: "webgl" | "wasm";
@@ -155,15 +158,22 @@ async function loadModelSession(
   const modelData: string | Uint8Array =
     typeof source === "string" ? source : new Uint8Array(source);
 
+  const isFP16 = format.toUpperCase() === "FP16";
+
   // Note: ONNX Runtime types are overly strict - the API actually accepts string URLs
   // Using type assertion to work around incomplete type definitions
   const createSession = (data: string | Uint8Array, providers: string[]) =>
     ort.InferenceSession.create(data as Parameters<typeof ort.InferenceSession.create>[0], {
       executionProviders: providers,
-      graphOptimizationLevel: "all"
     });
 
-  // Try WebGL first (GPU acceleration)
+  // FP16 models: use WASM (WebGL can't handle float16 weight tensors)
+  if (isFP16) {
+    const wasmSession = await createSession(modelData, ["wasm"]);
+    return { session: wasmSession, provider: "wasm" };
+  }
+
+  // FP32 models: try WebGL first (GPU acceleration)
   try {
     const webglSession = await createSession(modelData, ["webgl"]);
     return { session: webglSession, provider: "webgl" };
@@ -277,7 +287,7 @@ async function handleLoadModel(msg: MessageLoadModel): Promise<void> {
       throw new Error("No model provided");
     }
 
-    const result = await loadModelSession(source);
+    const result = await loadModelSession(source, msg.modelFormat);
     session = result.session;
 
     // Report success
@@ -357,7 +367,7 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
         input.set(audioData.subarray(startSample, endSample), b * chunkSamples);
       }
 
-      // Create ONNX tensor and run inference
+      // Create ONNX tensor and run inference (I/O is always float32)
       const tensor = new ort.Tensor("float32", input, [batchCount, chunkSamples]);
       const feeds: Record<string, ort.Tensor> = {
         [session.inputNames[0]]: tensor
@@ -373,6 +383,7 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
 
       // Run model
       const results = await session.run(feeds);
+
       const predTensor = findPredictionTensor(results, labelCount);
       const predictions = predTensor.data as Float32Array;
       const outputDim = predTensor.dims?.[1] || labelCount;
