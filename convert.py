@@ -15,6 +15,9 @@ Usage:
 
 Requirements:
     pip install onnx onnxruntime onnxconverter-common onnxruntime-tools
+
+    For TFLite/LiteRT conversion (requires Linux; use WSL on Windows):
+    pip install litert-torch torch
 """
 
 import argparse
@@ -43,6 +46,7 @@ def make_output_name(stem: str, format_name: str, suffix: str = ".onnx") -> str:
         make_output_name("Model_FP32", "FP16") -> "Model_FP16.onnx"
         make_output_name("Model_FP32", "INT8") -> "Model_INT8.onnx"
         make_output_name("SomeModel", "FP16") -> "SomeModel_FP16.onnx"
+        make_output_name("Model_FP32", "FP32", ".tflite") -> "Model_FP32.tflite"
     """
     if "FP32" in stem:
         return stem.replace("FP32", format_name) + suffix
@@ -801,6 +805,123 @@ def convert_to_ort_format(input_path: Path, output_path: Path) -> bool:
         return False
 
 
+def convert_to_tflite(
+    input_path: Path,
+    output_path: Path,
+    batch_size: int | None = 1,
+    duration_sec: float | None = None,
+    sample_rate: int = 32000,
+) -> bool:
+    """
+    Convert a PyTorch TorchScript (.pt) model to TFLite / LiteRT format
+    using litert-torch (formerly ai-edge-torch).
+
+    Pipeline: TorchScript (.pt) → torch.export → litert_torch.convert → .tflite
+
+    The BirdNET model input shape is [batch, samples].  Users can optionally
+    fix one or both dimensions to produce a static-shape TFLite model (which
+    is better supported on most delegates).  When a dimension is left
+    unspecified (None), torch.export dynamic_shapes are used and the TFLite
+    model will accept variable sizes for that axis.
+
+    Args:
+        input_path:    Path to input TorchScript .pt model
+        output_path:   Path for output .tflite file
+        batch_size:    Fixed batch size (default 1). None = dynamic.
+        duration_sec:  Fixed audio duration in seconds.  None = dynamic.
+        sample_rate:   Audio sample rate in Hz (default 32000)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        import torch
+    except ImportError:
+        print("  ERROR: Install PyTorch: pip install torch")
+        return False
+
+    try:
+        import litert_torch
+    except ImportError:
+        print("  ERROR: Install litert-torch: pip install litert-torch")
+        print("         Note: litert-torch currently requires Linux.")
+        print("         On Windows, use WSL (Windows Subsystem for Linux).")
+        return False
+
+    # ---- Determine shapes ----
+    sample_batch = batch_size if batch_size is not None else 1
+    if duration_sec is not None:
+        sample_samples = int(duration_sec * sample_rate)
+    else:
+        sample_samples = int(3.0 * sample_rate)  # 3 s default for tracing
+
+    shape_desc_parts = []
+    if batch_size is not None:
+        shape_desc_parts.append(f"batch={batch_size}")
+    else:
+        shape_desc_parts.append("batch=dynamic")
+    if duration_sec is not None:
+        shape_desc_parts.append(f"duration={duration_sec}s ({sample_samples} samples)")
+    else:
+        shape_desc_parts.append("duration=dynamic")
+    shape_desc = ", ".join(shape_desc_parts)
+
+    print(f"  Converting PyTorch (.pt) → TFLite ...")
+    print(f"  Input shape: [{sample_batch}, {sample_samples}]  ({shape_desc})")
+
+    try:
+        # Step 1 ── Load TorchScript model
+        print("  Step 1/3: Loading TorchScript model...")
+        scripted_model = torch.jit.load(str(input_path), map_location="cpu")
+        scripted_model.eval()
+
+        # Step 2 ── Wrap in a plain nn.Module so torch.export can trace it
+        class _Wrapper(torch.nn.Module):
+            def __init__(self, m: torch.jit.ScriptModule):
+                super().__init__()
+                self.m = m
+
+            def forward(self, x: torch.Tensor):
+                # BirdNET returns (embeddings, predictions)
+                out = self.m(x)
+                if isinstance(out, (tuple, list)):
+                    return tuple(out)
+                return out
+
+        wrapper = _Wrapper(scripted_model)
+        wrapper.eval()
+
+        sample_input = (torch.randn(sample_batch, sample_samples),)
+
+        # Build dynamic_shapes dict when a dimension is not fixed
+        dynamic_shapes = None
+        dim_map: dict[int, object] = {}
+        if batch_size is None:
+            dim_map[0] = torch.export.Dim("batch", min=1, max=128)
+        if duration_sec is None:
+            dim_map[1] = torch.export.Dim("samples", min=sample_rate, max=sample_rate * 600)
+        if dim_map:
+            dynamic_shapes = ({**dim_map},)
+
+        # Step 3 ── Convert with litert-torch
+        print("  Step 2/3: Converting via litert-torch...")
+        convert_kwargs: dict = {}
+        if dynamic_shapes is not None:
+            convert_kwargs["dynamic_shapes"] = dynamic_shapes
+        edge_model = litert_torch.convert(wrapper, sample_input, **convert_kwargs)
+
+        print("  Step 3/3: Exporting .tflite...")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        edge_model.export(str(output_path))
+
+        print(f"  Saved: {output_path} ({get_model_size(output_path)})")
+        return True
+
+    except Exception as e:
+        print(f"  ERROR: TFLite conversion failed: {e}")
+        return False
+
+
 def validate_model(model_path: Path, reference_path: Path | None = None) -> bool:
     """
     Validate that the converted model produces similar outputs.
@@ -920,6 +1041,17 @@ Examples:
     parser.add_argument("--all", action="store_true", help="Generate all variants (FP16, INT8, optimized)")
     parser.add_argument("--validate", action="store_true", help="Validate converted models")
     parser.add_argument("--fp16-io", action="store_true", help="Also convert inputs/outputs to FP16")
+    parser.add_argument("--tflite", action="store_true", help="Convert PyTorch (.pt) model to TFLite/LiteRT via litert-torch")
+    parser.add_argument("--tflite-batch-size", type=int, default=1, metavar="N",
+                        help="Fixed batch size for TFLite model (default: 1). Set to 0 for dynamic batch.")
+    parser.add_argument("--tflite-duration", type=float, default=None, metavar="SEC",
+                        help="Fixed audio duration in seconds for TFLite input. "
+                             "Omit for dynamic duration (model accepts any length).")
+    parser.add_argument("--tflite-sample-rate", type=int, default=32000, metavar="HZ",
+                        help="Audio sample rate for TFLite input size calculation (default: 32000)")
+    parser.add_argument("--tflite-model", type=Path, default=None, metavar="PATH",
+                        help="Path to PyTorch (.pt) model for TFLite conversion. "
+                             "If omitted, infers from the ONNX input path (replaces .onnx with .pt).")
     parser.add_argument("--species-list", type=Path, help="Filter model to only include species in this file (one per line)")
     parser.add_argument("--labels", type=Path, help="Path to labels CSV file (required with --species-list)")
     
@@ -967,11 +1099,12 @@ Examples:
         args.fp16 = True
         args.int8 = True
         args.optimize = True
+        args.tflite = True
     
     # If no conversion specified and no species filtering, show help
-    if not any([args.fp16, args.int8, args.int8_head, args.int8_static, args.optimize, args.ort, args.species_list]):
+    if not any([args.fp16, args.int8, args.int8_head, args.int8_static, args.optimize, args.ort, args.tflite, args.species_list]):
         parser.print_help()
-        print("\nERROR: Specify at least one conversion: --fp16, --int8, --int8-head, --optimize, --ort, --species-list, or --all")
+        print("\nERROR: Specify at least one conversion: --fp16, --int8, --int8-head, --optimize, --ort, --tflite, --species-list, or --all")
         sys.exit(1)
     
     # Working model path (may change after species filtering)
@@ -1051,10 +1184,47 @@ Examples:
     
     # 5. ORT format
     if args.ort:
-        print("[4/4] ORT Format Conversion")
+        print("[4/6] ORT Format Conversion")
         ort_output = output_dir / make_output_name(stem, "ORT", ".ort")
         if convert_to_ort_format(optimized_path, ort_output):
             results.append(("ORT", ort_output))
+        print()
+
+    # 6. TFLite / LiteRT conversion via litert-torch (from PyTorch .pt)
+    if args.tflite:
+        print("[5/6] TFLite/LiteRT Conversion (via litert-torch)")
+
+        # Resolve .pt model path
+        pt_path = args.tflite_model
+        if pt_path is None:
+            # Try to infer from ONNX input path: replace suffixes like _FP32.onnx → _FP32.pt
+            inferred = args.input.with_suffix(".pt")
+            if inferred.exists():
+                pt_path = inferred
+            else:
+                # Also try stripping precision suffix
+                for tag in ["_FP32", "_FP16", "_INT8"]:
+                    candidate = Path(str(args.input).replace(tag + ".onnx", ".pt"))
+                    if candidate.exists():
+                        pt_path = candidate
+                        break
+            if pt_path is None or not pt_path.exists():
+                print(f"  ERROR: Could not find PyTorch model. Tried: {inferred}")
+                print(f"         Use --tflite-model to specify the .pt path explicitly.")
+            else:
+                print(f"  Using PyTorch model: {pt_path}")
+
+        if pt_path is not None and pt_path.exists():
+            batch_size_val = args.tflite_batch_size if args.tflite_batch_size != 0 else None
+            tflite_output = output_dir / make_output_name(stem, "FP32", ".tflite")
+            if convert_to_tflite(
+                pt_path,
+                tflite_output,
+                batch_size=batch_size_val,
+                duration_sec=args.tflite_duration,
+                sample_rate=args.tflite_sample_rate,
+            ):
+                results.append(("TFLite", tflite_output))
         print()
     
     # Summary
