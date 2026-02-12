@@ -141,15 +141,12 @@ async function loadLabelsFromUrl(url: string): Promise<{
 /**
  * Loads an ONNX inference session with preferred execution provider.
  * Tries WebGL (GPU) first for best performance, falls back to WASM (CPU).
- * FP16 models use WASM directly (WebGL can't handle float16 weight tensors).
  *
  * @param source - Model URL or ArrayBuffer
- * @param format - Model precision format (e.g. "FP32", "FP16")
  * @returns Session and provider info
  */
 async function loadModelSession(
   source: string | ArrayBuffer,
-  format: string = "FP32"
 ): Promise<{
   session: ort.InferenceSession;
   provider: "webgl" | "wasm";
@@ -158,8 +155,6 @@ async function loadModelSession(
   const modelData: string | Uint8Array =
     typeof source === "string" ? source : new Uint8Array(source);
 
-  const isFP16 = format.toUpperCase() === "FP16";
-
   // Note: ONNX Runtime types are overly strict - the API actually accepts string URLs
   // Using type assertion to work around incomplete type definitions
   const createSession = (data: string | Uint8Array, providers: string[]) =>
@@ -167,18 +162,11 @@ async function loadModelSession(
       executionProviders: providers,
     });
 
-  // FP16 models: use WASM (WebGL can't handle float16 weight tensors)
-  if (isFP16) {
-    const wasmSession = await createSession(modelData, ["wasm"]);
-    return { session: wasmSession, provider: "wasm" };
-  }
-
-  // FP32 models: try WebGL first (GPU acceleration)
+  // Try WebGL first (GPU acceleration), fall back to WASM (CPU)
   try {
     const webglSession = await createSession(modelData, ["webgl"]);
     return { session: webglSession, provider: "webgl" };
   } catch {
-    // Fall back to WASM (CPU)
     const wasmSession = await createSession(modelData, ["wasm"]);
     return { session: wasmSession, provider: "wasm" };
   }
@@ -287,7 +275,7 @@ async function handleLoadModel(msg: MessageLoadModel): Promise<void> {
       throw new Error("No model provided");
     }
 
-    const result = await loadModelSession(source, msg.modelFormat);
+    const result = await loadModelSession(source);
     session = result.session;
 
     // Report success

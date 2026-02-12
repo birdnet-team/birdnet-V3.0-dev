@@ -426,7 +426,6 @@ async function loadModel(): Promise<void> {
         type: "loadModel",
         modelBuffer,
         labelsText,
-        modelFormat: elements.modelFormat.value
       });
     } else {
       // Load from URLs - use custom URL if provided, otherwise use format selector
@@ -437,7 +436,6 @@ async function loadModel(): Promise<void> {
         type: "loadModel",
         modelUrl,
         labelsUrl,
-        modelFormat: elements.modelFormat.value
       });
     }
 

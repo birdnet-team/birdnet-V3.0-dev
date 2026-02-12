@@ -28,6 +28,8 @@ Analyze audio with BirdNET+ V3.0 developer preview models. This repository provi
 
 > ⚠️ **Developer Preview Notice:** Models, labels, and code will change before final release.
 
+You can download the latest models and labels from [Zenodo](https://zenodo.org/records/18247420) or run the tools which will download them automatically on first use.
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)

@@ -45,8 +45,6 @@ export interface MessageLoadModel {
   labelsUrl?: string;
   /** Pre-fetched labels CSV content (if not providing URL) */
   labelsText?: string;
-  /** Model precision format ("FP32", "FP16", etc.) - used to select execution provider */
-  modelFormat?: string;
 }
 
 /**
