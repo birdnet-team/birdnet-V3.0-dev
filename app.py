@@ -42,7 +42,7 @@ MODEL_BASE = "BirdNET+_V3.0-preview3_Global_11K"
 # Available model variants (format: (display_name, extension, framework))
 # Note: INT8 removed due to unreliable results with 11K-class softmax
 MODEL_VARIANTS = [
-    ("FP32 (PyTorch)", ".pt", "pytorch"),
+    ("FP32 (PyTorch)", "_FP32.pt", "pytorch"),
     ("FP32 (ONNX)", "_FP32.onnx", "onnx"),
     ("FP16 (ONNX)", "_FP16.onnx", "onnx"),
 ]
