@@ -37,14 +37,13 @@ st.set_page_config(page_title="BirdNET+ V3.0 Preview", layout="wide")
 # Model Paths
 # ---------------------------
 MODEL_DIR = "models"
-MODEL_BASE = "BirdNET+_V3.0-preview3_Global_11K"
+MODEL_BASE = "BirdNET+_V3.0-preview3.1_Global_11K"
 
 # Available model variants (format: (display_name, extension, framework))
 # Note: INT8 removed due to unreliable results with 11K-class softmax
 MODEL_VARIANTS = [
-    ("FP32 (PyTorch)", ".pt", "pytorch"),
-    ("FP32 (ONNX)", "_FP32.onnx", "onnx"),
-    ("FP16 (ONNX)", "_FP16.onnx", "onnx"),
+    ("FP32 (PyTorch)", "_FP32.pt", "pytorch"),
+    ("FP16 (ONNX)", "_FP16_pruned.onnx", "onnx"),
 ]
 
 def get_model_path(suffix: str) -> str:
@@ -122,9 +121,9 @@ def run_onnx_inference(
         batch = chunks[i:i + batch_size].astype(input_dtype)
         outputs = session.run(output_names, {input_name: batch})
         
-        # Model outputs: embeddings, predictions (two outputs) or just predictions
+        # Model outputs: predictions, embeddings (two outputs) or just predictions
         if len(outputs) == 2:
-            emb, pred = outputs
+            pred, emb = outputs
             if return_embeddings:
                 embs_out.append(emb.astype(np.float32))
         else:
@@ -221,7 +220,7 @@ if os.path.isfile(labels_path):
         )
     
 
-st.title("BirdNET+ V3.0 Developer Preview 3 - 11K Species")
+st.title("BirdNET+ V3.0 Developer Preview 3.1 - 11K Species")
 st.caption("Developer preview; models, labels, and outputs may change with future releases.")
 
 # ---------------------------
