@@ -32,9 +32,7 @@
             <label class="flex flex-col gap-1">
               <span class="text-xs text-slate-500">Model format</span>
               <select id="model-format" class="h-9 px-2 border border-slate-200 rounded text-sm bg-white">
-                <option value="FP32" selected>FP32 (516 MB)</option>
-                <!-- FP16 requires: python convert.py ... --fp16 -->
-                <option value="FP16">FP16 (258 MB)</option>
+                <option value="FP16_pruned" selected>FP16 Pruned (68 MB)</option>
               </select>
             </label>
             <label class="flex flex-col gap-1">
@@ -62,7 +60,7 @@
             <summary class="cursor-pointer text-slate-500 hover:text-slate-700">Custom model sources</summary>
             <div class="mt-2 space-y-2">
               <input id="model-url" class="w-full h-8 px-2 border border-slate-200 rounded text-xs" type="url" placeholder="Custom model URL (leave empty to use format selector)" />
-              <input id="labels-url" class="w-full h-8 px-2 border border-slate-200 rounded text-xs" type="url" value="/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv" placeholder="Labels URL" />
+              <input id="labels-url" class="w-full h-8 px-2 border border-slate-200 rounded text-xs" type="url" value="/assets/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv" placeholder="Labels URL" />
               <div class="flex gap-2">
                 <input id="local-model" class="flex-1 text-xs" type="file" accept=".onnx" />
                 <input id="local-labels" class="flex-1 text-xs" type="file" accept=".csv" />

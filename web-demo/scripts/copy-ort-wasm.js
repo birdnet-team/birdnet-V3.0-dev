@@ -7,7 +7,9 @@ const rootDir = resolve(__dirname, "..");
 const distDir = resolve(rootDir, "node_modules/onnxruntime-web/dist");
 const outDir = resolve(rootDir, "public/ort");
 
-const files = readdirSync(distDir).filter((name) => name.endsWith(".wasm"));
+const files = readdirSync(distDir).filter((name) =>
+  name.startsWith("ort-wasm-") || name.startsWith("ort-training-")
+);
 
 mkdirSync(outDir, { recursive: true });
 

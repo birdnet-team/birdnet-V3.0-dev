@@ -23,10 +23,10 @@ except ImportError:
 SR = 32000  # model expects 32 kHz
 
 # Defaults and hardcoded URLs (replace with actual links)
-DEFAULT_MODEL_PATH = "models/BirdNET+_V3.0-preview3_Global_11K_FP32.pt"
-DEFAULT_LABELS_PATH = "models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv"
-DEFAULT_MODEL_URL = "https://zenodo.org/records/18247420/files/BirdNET+_V3.0-preview3_Global_11K_FP32.pt?download=1"
-DEFAULT_LABELS_URL = "https://zenodo.org/records/18247420/files/BirdNET+_V3.0-preview3_Global_11K_Labels.csv?download=1"
+DEFAULT_MODEL_PATH = "models/BirdNET+_V3.0-preview3.1_Global_11K_FP32.pt"
+DEFAULT_LABELS_PATH = "models/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv"
+DEFAULT_MODEL_URL = "https://zenodo.org/records/20703646/files/BirdNET+_V3.0-preview3.1_Global_11K_FP32.pt?download=1"
+DEFAULT_LABELS_URL = "https://zenodo.org/records/20703646/files/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv?download=1"
 
 
 def load_labels(labels_csv: str) -> List[str]:
@@ -97,10 +97,10 @@ def run_inference(
     return_embeddings: bool = False,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """
-    Run inference with the new model that returns (embeddings, predictions).
+    Run inference with the new model that returns (predictions, embeddings).
 
     Args:
-        model: TorchScript model returning (embeddings, predictions).
+        model: TorchScript model returning (predictions, embeddings).
         chunks: [N, T] float32 mono audio.
         device: torch.device for inference.
         batch_size: batch size.
@@ -121,10 +121,10 @@ def run_inference(
             batch = chunks[i:i + batch_size]
             x = torch.from_numpy(batch).to(device)  # [B, T]
             out = model(x)
-            # Expect (embeddings, predictions)
+            # Expect (predictions, embeddings)
             if not (isinstance(out, (tuple, list)) and len(out) == 2):
-                raise RuntimeError("Model is expected to return (embeddings, predictions).")
-            emb, pred = out
+                raise RuntimeError("Model is expected to return (predictions, embeddings).")
+            pred, emb = out
 
             if pred.ndim == 1:
                 pred = pred.unsqueeze(0)
@@ -180,9 +180,9 @@ def run_onnx_inference(
         batch = chunks[i:i + batch_size].astype(input_dtype)
         outputs = session.run(output_names, {input_name: batch})
         
-        # Model outputs: embeddings, predictions (two outputs) or just predictions
+        # Model outputs: predictions, embeddings (two outputs) or just predictions
         if len(outputs) == 2:
-            emb, pred = outputs
+            pred, emb = outputs
             if return_embeddings:
                 embs_out.append(emb.astype(np.float32))
         else:

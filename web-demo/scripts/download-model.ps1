@@ -3,11 +3,11 @@ $ErrorActionPreference = "Stop"
 $rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $assetsDir = Join-Path $rootDir "public\assets"
 
-$modelUrl = "https://zenodo.org/records/18247420/files/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx?download=1"
-$labelsUrl = "https://zenodo.org/records/18247420/files/BirdNET+_V3.0-preview3_Global_11K_Labels.csv?download=1"
+$modelUrl = "https://zenodo.org/records/20703646/files/BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx?download=1"
+$labelsUrl = "https://zenodo.org/records/20703646/files/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv?download=1"
 
-$modelPath = Join-Path $assetsDir "BirdNET+_V3.0-preview3_Global_11K_FP32.onnx"
-$labelsPath = Join-Path $assetsDir "BirdNET+_V3.0-preview3_Global_11K_Labels.csv"
+$modelPath = Join-Path $assetsDir "BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx"
+$labelsPath = Join-Path $assetsDir "BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv"
 
 New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null
 
