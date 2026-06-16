@@ -43,6 +43,46 @@ def load_labels(labels_csv: str) -> List[str]:
     return labels
 
 
+def guess_labels_path(model_path: str) -> Optional[str]:
+    """
+    Attempt to find a matching labels CSV file for a given model path.
+    For example:
+      - models/BirdNET+_V3.0-preview3.1_Global_11K_FP32.pt -> models/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv
+      - custom_model.onnx -> custom_model_Labels.csv or custom_model.csv
+    """
+    base, ext = os.path.splitext(model_path)
+
+    # Remove common model suffix variations to extract the base name
+    for suffix in ["_FP32", "_FP16_pruned", "_FP16", "_INT8", "_pruned"]:
+        if base.endswith(suffix):
+            guess = base[:-len(suffix)] + "_Labels.csv"
+            if os.path.isfile(guess):
+                return guess
+            guess_simple = base[:-len(suffix)] + ".csv"
+            if os.path.isfile(guess_simple):
+                return guess_simple
+
+    # Direct substitutions
+    guess1 = base + "_Labels.csv"
+    if os.path.isfile(guess1):
+        return guess1
+    guess2 = base + ".csv"
+    if os.path.isfile(guess2):
+        return guess2
+
+    # Check directory for any file ending with 'Labels.csv'
+    dir_name = os.path.dirname(model_path)
+    if dir_name:
+        try:
+            for f in os.listdir(dir_name):
+                if f.endswith("Labels.csv") and not f.startswith("BirdNET+"):
+                    return os.path.join(dir_name, f)
+        except Exception:
+            pass
+
+    return None
+
+
 def chunk_audio(y: np.ndarray, chunk_length: float, overlap: float = 0.0, sr: int = SR) -> Tuple[np.ndarray, List[Tuple[float, float]]]:
     """
     Split audio into chunks with optional temporal overlap.
@@ -299,6 +339,13 @@ def main():
     # Detect model type
     is_onnx = args.model.lower().endswith(".onnx")
     
+    # Auto-detect matching labels file if model is not default and labels is default
+    if args.labels == DEFAULT_LABELS_PATH and args.model != DEFAULT_MODEL_PATH:
+        guessed = guess_labels_path(args.model)
+        if guessed:
+            print(f"Auto-detected matching labels file: {guessed}")
+            args.labels = guessed
+
     print(f"BirdNET+ V3.0 developer preview run on {args.audio}")
     print(f"Model type: {'ONNX' if is_onnx else 'PyTorch'}")
 
@@ -351,7 +398,10 @@ def main():
     try:
         y, sr = librosa.load(args.audio, sr=SR, mono=True)
     except Exception as e:
-        print(f"Error loading audio: {e}", file=sys.stderr)
+        error_msg = str(e)
+        if any(ext in args.audio.lower() for ext in [".m4a", ".mp4", ".aac"]):
+            error_msg += "\nNote: Loading M4A/AAC files requires ffmpeg to be installed and available in your system PATH."
+        print(f"Error loading audio: {error_msg}", file=sys.stderr)
         sys.exit(1)
 
     chunks, spans = chunk_audio(y, args.chunk_length, overlap=args.overlap, sr=SR)
@@ -368,6 +418,13 @@ def main():
         probs_chunks, embeddings = run_inference(
             model, chunks, device=device, return_embeddings=args.export_embeddings
         )
+
+    # Verify model shape matches labels count
+    if probs_chunks.shape[-1] != len(labels):
+        print(f"Error: Model output shape {probs_chunks.shape[-1]} does not match labels count {len(labels)}.", file=sys.stderr)
+        print("This usually happens when you use a custom or filtered model but run it with the default labels file (or vice versa).", file=sys.stderr)
+        print("Please ensure that you specify the correct labels CSV file using the '--labels' argument.", file=sys.stderr)
+        sys.exit(1)
 
     out_csv = args.out_csv if args.out_csv else (os.path.splitext(args.audio)[0] + ".results.csv")
     rows = save_per_chunk_csv(

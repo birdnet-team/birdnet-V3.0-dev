@@ -29,6 +29,7 @@ from analyze import (
     DEFAULT_MODEL_PATH,
     DEFAULT_LABELS_PATH,
     SR,
+    guess_labels_path,
 )
 
 st.set_page_config(page_title="BirdNET+ V3.0 Preview", layout="wide")
@@ -186,6 +187,11 @@ else:
     model_framework = "pytorch"
     selected_model_name = "FP32 (PyTorch)"
 
+# Determine labels path dynamically based on selected model
+guessed_labels = guess_labels_path(model_path)
+if guessed_labels:
+    labels_path = guessed_labels
+
 chunk_length = st.sidebar.number_input("Chunk length (s)", min_value=0.5, max_value=30.0, value=3.0, step=1.0)
 overlap = st.sidebar.number_input("Overlap (s)", min_value=0.0, max_value=29.9, value=0.0, step=0.5)
 batch_size = st.sidebar.number_input("Batch size", min_value=1, max_value=512, value=16, step=1)
@@ -246,7 +252,10 @@ if uploaded:
         if playback_enabled and audio_bytes:
             st.audio(audio_bytes, format=uploaded.type or "audio/wav")
     except Exception as e:
-        st.error(f"Audio load error: {e}")
+        error_msg = str(e)
+        if uploaded and any(ext in uploaded.name.lower() for ext in [".m4a", ".mp4", ".aac"]):
+            error_msg += "\n\nNote: Loading M4A/AAC files requires ffmpeg to be installed and available in your system PATH."
+        st.error(f"Audio load error: {error_msg}")
         y = None
 else:
     y = None
@@ -342,10 +351,12 @@ if uploaded and y is not None and len(y) > 0:
             probs_chunks, _ = run_onnx_inference(model, chunks, batch_size=batch_size, return_embeddings=False)
 
     if probs_chunks.shape[-1] != len(labels):
-        c = min(probs_chunks.shape[-1], len(labels))
-        probs_chunks = probs_chunks[:, :c]
-        labels = labels[:c]
-        st.warning("Adjusted label count to match model output.")
+        st.error(
+            f"Model output shape ({probs_chunks.shape[-1]}) does not match the loaded labels count ({len(labels)}). "
+            "This usually happens when you use a custom or filtered model but run it with the default labels file (or vice versa).\n\n"
+            "Please ensure that the correct labels CSV file (matching your model) is placed in the models directory with the matching filename suffix."
+        )
+        st.stop()
 
     # Aggregate
     if agg_method == "mean":
