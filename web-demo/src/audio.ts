@@ -22,22 +22,48 @@ export async function decodeAudioFile(
   audioFile: File,
   targetSampleRate: number = SAMPLE_RATE
 ): Promise<Float32Array> {
-  // Read file as ArrayBuffer
+  console.info(`[Audio] Decoding file: ${audioFile.name} (${audioFile.size} bytes)...`);
   const arrayBuffer = await audioFile.arrayBuffer();
 
-  // Use OfflineAudioContext to decode and resample in one step
-  // This is more accurate than manual resampling for most cases
-  const audioCtx = new OfflineAudioContext(
-    1, // mono output
-    1, // temporary length, will be replaced
-    targetSampleRate
-  );
+  // 1. Decode using a standard AudioContext (compatible with all browsers and robust)
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  const decodeCtx = new AudioContextClass();
+  let originalBuffer: AudioBuffer;
+  try {
+    originalBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    await decodeCtx.close();
+  }
 
-  // Decode the compressed audio
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  const duration = originalBuffer.duration;
+  console.info(`[Audio] Decoded original audio: duration=${duration.toFixed(3)}s, sampleRate=${originalBuffer.sampleRate}Hz, channels=${originalBuffer.numberOfChannels}`);
 
-  // Convert to mono and resample
-  return extractMonoChannel(audioBuffer, targetSampleRate);
+  // 2. Resample and downmix using OfflineAudioContext.
+  // This uses the browser's built-in high-quality sinc resampling with anti-aliasing,
+  // and automatically downmixes the audio to 1 channel (mono).
+  const targetLength = Math.ceil(duration * targetSampleRate);
+  const offlineCtx = new OfflineAudioContext(1, targetLength, targetSampleRate);
+
+  const sourceNode = offlineCtx.createBufferSource();
+  sourceNode.buffer = originalBuffer;
+  sourceNode.connect(offlineCtx.destination);
+  sourceNode.start(0);
+
+  const renderedBuffer = await offlineCtx.startRendering();
+  const resampledData = renderedBuffer.getChannelData(0);
+
+  // Calculate stats for debugging
+  let min = 0, max = 0, sum = 0;
+  for (let i = 0; i < resampledData.length; i++) {
+    const val = resampledData[i];
+    if (val < min) min = val;
+    if (val > max) max = val;
+    sum += val;
+  }
+  const mean = sum / resampledData.length;
+  console.info(`[Audio] Resampled to ${targetSampleRate}Hz: samples=${resampledData.length}, min=${min.toFixed(4)}, max=${max.toFixed(4)}, mean=${mean.toFixed(6)}`);
+
+  return resampledData;
 }
 
 /**

@@ -6,7 +6,7 @@ models/*.onnx
 # Ignore web demo local assets (large files)
 web-demo/public/assets/*.onnx
 web-demo/public/assets/*.csv
-web-demo/public/ort/*.wasm
+web-demo/public/ort/
 
 # Ignore web demo build output and deps
 web-demo/dist/
@@ -14,6 +14,9 @@ web-demo/node_modules/
 
 # Ignore result files
 *.results.csv
+
+# Custom folders
+tests/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

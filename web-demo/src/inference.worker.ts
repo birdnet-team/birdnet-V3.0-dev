@@ -5,7 +5,7 @@
  * Communicates with main thread via postMessage API.
  *
  * Responsibilities:
- * - Loading the ONNX model (with WebGL preference, WASM fallback)
+ * - Loading the ONNX model with the WASM execution provider
  * - Parsing species labels from CSV
  * - Chunking audio and running batched inference
  * - Reporting progress during long inference runs
@@ -24,8 +24,13 @@ import type {
 // -----------------------------------------------------------------------------
 
 // Configure WASM paths for worker context
-// Files are served from /ort/ in the public folder
-ort.env.wasm.wasmPaths = "/ort/";
+// In development, load from jsdelivr CDN to bypass Vite's public folder import check.
+// In production, load from the local /ort/ folder served from your web server.
+if (import.meta.env.DEV) {
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
+} else {
+  ort.env.wasm.wasmPaths = "/ort/";
+}
 
 // -----------------------------------------------------------------------------
 // Worker State
@@ -140,7 +145,7 @@ async function loadLabelsFromUrl(url: string): Promise<{
 
 /**
  * Loads an ONNX inference session with preferred execution provider.
- * Tries WebGL (GPU) first for best performance, falls back to WASM (CPU).
+ * Uses WASM for operator compatibility with the current BirdNET export.
  *
  * @param source - Model URL or ArrayBuffer
  * @returns Session and provider info
@@ -162,14 +167,10 @@ async function loadModelSession(
       executionProviders: providers,
     });
 
-  // Try WebGL first (GPU acceleration), fall back to WASM (CPU)
-  try {
-    const webglSession = await createSession(modelData, ["webgl"]);
-    return { session: webglSession, provider: "webgl" };
-  } catch {
-    const wasmSession = await createSession(modelData, ["wasm"]);
-    return { session: wasmSession, provider: "wasm" };
-  }
+  // Use WASM (CPU) for correct inference and operator compatibility.
+  // WebGL is legacy and lacks support for complex operators (e.g. STFT/DFT).
+  const wasmSession = await createSession(modelData, ["wasm"]);
+  return { session: wasmSession, provider: "wasm" };
 }
 
 // -----------------------------------------------------------------------------
@@ -180,13 +181,13 @@ async function loadModelSession(
  * Plans how to split audio into overlapping chunks for inference.
  * BirdNET processes audio in segments (default 3s). If the audio is shorter
  * than the chunk length, or the last segment is shorter, a partial chunk is
- * included with its actual sample count.
+ * included and zero-padded to the configured chunk length for inference.
  *
  * @param audioLength - Total audio samples
  * @param chunkLengthSec - Chunk duration in seconds
  * @param overlapSec - Overlap between chunks in seconds
  * @param sampleRate - Audio sample rate
- * @returns Chunk start positions, time spans, and per-chunk actual sample counts
+ * @returns Chunk start positions, time spans, and padded chunk length
  */
 function planAudioChunks(
   audioLength: number,
@@ -197,7 +198,6 @@ function planAudioChunks(
   starts: number[];
   spans: [number, number][];
   chunkSamples: number;
-  actualSamples: number[];
 } {
   const chunkSamples = Math.floor(chunkLengthSec * sampleRate);
   const hopSamples = Math.max(
@@ -207,26 +207,18 @@ function planAudioChunks(
 
   const starts: number[] = [];
   const spans: [number, number][] = [];
-  const actualSamples: number[] = [];
 
-  for (let i = 0; i + chunkSamples <= audioLength; i += hopSamples) {
-    starts.push(i);
-    spans.push([i / sampleRate, (i + chunkSamples) / sampleRate]);
-    actualSamples.push(chunkSamples);
+  const step = hopSamples;
+  for (let s = 0; s < audioLength; s += step) {
+    const e = Math.min(s + chunkSamples, audioLength);
+    starts.push(s);
+    spans.push([s / sampleRate, e / sampleRate]);
+    if (e >= audioLength) {
+      break;
+    }
   }
 
-  // Include trailing partial chunk if there are remaining samples
-  const nextStart = starts.length > 0
-    ? starts[starts.length - 1] + hopSamples
-    : 0;
-  if (nextStart < audioLength) {
-    const remaining = audioLength - nextStart;
-    starts.push(nextStart);
-    spans.push([nextStart / sampleRate, audioLength / sampleRate]);
-    actualSamples.push(remaining);
-  }
-
-  return { starts, spans, chunkSamples, actualSamples };
+  return { starts, spans, chunkSamples };
 }
 
 /**
@@ -241,17 +233,23 @@ function findPredictionTensor(
   outputs: Record<string, ort.Tensor>,
   labelCount: number
 ): ort.Tensor {
-  const tensors = Object.values(outputs);
+  console.info("[Worker] Available outputs in model results:");
+  for (const [name, tensor] of Object.entries(outputs)) {
+    console.info(`  - Name: ${name}, dims: [${tensor.dims}], type: ${tensor.type}`);
+  }
 
-  // Look for tensor with expected shape [batch, num_species]
+  const tensors = Object.entries(outputs);
   const byLabelCount = tensors.find(
-    (t) => t.dims?.length === 2 && t.dims[1] === labelCount
+    ([name, t]) => t.dims?.length === 2 && t.dims[1] === labelCount
   );
 
-  if (byLabelCount) return byLabelCount;
+  if (byLabelCount) {
+    console.info(`[Worker] Selected prediction tensor by label count matching (${labelCount}): Name: ${byLabelCount[0]}`);
+    return byLabelCount[1];
+  }
 
-  // Fall back to first tensor
-  return tensors[0];
+  console.info(`[Worker] Falling back to first tensor: Name: ${tensors[0][0]}`);
+  return tensors[0][1];
 }
 
 // -----------------------------------------------------------------------------
@@ -335,8 +333,10 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
   try {
     const { audioData, chunkLength, overlap, batchSize, minConf, sampleRate } = msg;
 
-    // Plan chunk positions (includes trailing partial chunk if any)
-    const { starts, spans, chunkSamples, actualSamples } = planAudioChunks(
+    console.info(`[Worker] Running inference: audioLength=${audioData.length}, chunkLength=${chunkLength}s, overlap=${overlap}s, batchSize=${batchSize}, minConf=${minConf}`);
+
+    // Plan chunk positions (all chunks will be padded to chunkSamples)
+    const { starts, spans, chunkSamples } = planAudioChunks(
       audioData.length,
       chunkLength,
       overlap,
@@ -358,28 +358,36 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
     const labelCount = labelScientific.length;
     const detections: DetectionRow[] = [];
     const startTime = performance.now();
-    const minSamples = sampleRate; // 1 second minimum input size
 
-    // Determine how many full-size chunks vs trailing partial chunk
-    const hasPartialChunk =
-      actualSamples[actualSamples.length - 1] < chunkSamples;
-    const fullChunkCount = hasPartialChunk
-      ? starts.length - 1
-      : starts.length;
-
-    // --- Process full-size chunks in batches ---
-    for (let i = 0; i < fullChunkCount; i += batchSize) {
-      const batchCount = Math.min(batchSize, fullChunkCount - i);
+    // Process all chunks in batches (all padded to chunkSamples)
+    for (let i = 0; i < starts.length; i += batchSize) {
+      const batchCount = Math.min(batchSize, starts.length - i);
 
       // Prepare input tensor: [batchCount, chunkSamples]
       const input = new Float32Array(batchCount * chunkSamples);
       for (let b = 0; b < batchCount; b++) {
         const startSample = starts[i + b];
-        input.set(
-          audioData.subarray(startSample, startSample + chunkSamples),
-          b * chunkSamples
-        );
+        const available = Math.max(0, audioData.length - startSample);
+        const toCopy = Math.min(chunkSamples, available);
+
+        if (toCopy > 0) {
+          input.set(
+            audioData.subarray(startSample, startSample + toCopy),
+            b * chunkSamples
+          );
+        }
       }
+
+      // Calculate input stats for debugging
+      let inputMin = 0, inputMax = 0, inputSum = 0;
+      for (let k = 0; k < input.length; k++) {
+        const val = input[k];
+        if (val < inputMin) inputMin = val;
+        if (val > inputMax) inputMax = val;
+        inputSum += val;
+      }
+      const inputMean = inputSum / input.length;
+      console.info(`[Worker] Batch ${i} input stats: length=${input.length}, min=${inputMin.toFixed(4)}, max=${inputMax.toFixed(4)}, mean=${inputMean.toFixed(6)}`);
 
       // Create ONNX tensor and run inference
       const tensor = new ort.Tensor("float32", input, [batchCount, chunkSamples]);
@@ -407,6 +415,17 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
         const offset = b * outputDim;
         const [start, end] = spans[i + b];
 
+        // Print first chunk top predictions for debugging
+        if (i + b === 0) {
+          const firstChunkIndices = Array.from({ length: labelCount }, (_, idx) => idx);
+          firstChunkIndices.sort((x, y) => predictions[offset + y] - predictions[offset + x]);
+          console.info(`[Worker] First chunk top 3 predictions:`);
+          for (let k = 0; k < 3; k++) {
+            const idx = firstChunkIndices[k];
+            console.info(`  - ${labelScientific[idx]} (${labelCommon[idx]}): ${predictions[offset + idx].toFixed(4)}`);
+          }
+        }
+
         for (let c = 0; c < labelCount; c++) {
           const confidence = predictions[offset + c];
           if (confidence >= minConf) {
@@ -422,53 +441,6 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
       }
     }
 
-    // --- Process trailing partial chunk with adjusted input size ---
-    if (hasPartialChunk) {
-      const idx = starts.length - 1;
-      const startSample = starts[idx];
-      const actual = actualSamples[idx];
-
-      // Use actual sample count, but pad to at least 1 second
-      const effectiveSamples = Math.max(actual, minSamples);
-
-      // Float32Array is zero-initialized, so short chunks are zero-padded
-      const input = new Float32Array(effectiveSamples);
-      input.set(audioData.subarray(startSample, startSample + actual));
-
-      const tensor = new ort.Tensor("float32", input, [1, effectiveSamples]);
-      const feeds: Record<string, ort.Tensor> = {
-        [session.inputNames[0]]: tensor
-      };
-
-      // Report progress
-      self.postMessage({
-        type: "inferenceProgress",
-        id: msg.id,
-        current: starts.length,
-        total: starts.length
-      });
-
-      const results = await session.run(feeds);
-
-      const predTensor = findPredictionTensor(results, labelCount);
-      const predictions = predTensor.data as Float32Array;
-      const outputDim = predTensor.dims?.[1] || labelCount;
-
-      const [start, end] = spans[idx];
-      for (let c = 0; c < labelCount; c++) {
-        const confidence = predictions[c];
-        if (confidence >= minConf) {
-          detections.push({
-            start,
-            end,
-            scientific: labelScientific[c] || "",
-            common: labelCommon[c] || "",
-            confidence
-          });
-        }
-      }
-    }
-
     // Calculate total inference time
     const duration = (performance.now() - startTime) / 1000;
 
@@ -476,6 +448,8 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
     detections.sort((a, b) =>
       a.start === b.start ? b.confidence - a.confidence : a.start - b.start
     );
+
+    console.info(`[Worker] Inference complete: totalDetections=${detections.length}, duration=${duration.toFixed(3)}s`);
 
     // Report results
     self.postMessage({
@@ -486,6 +460,7 @@ async function handleRunInference(msg: MessageRunInference): Promise<void> {
       duration
     });
   } catch (err) {
+    console.error(`[Worker] Inference error:`, err);
     self.postMessage({
       type: "inferenceResult",
       id: msg.id,

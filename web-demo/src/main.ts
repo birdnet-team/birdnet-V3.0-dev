@@ -29,12 +29,18 @@ import InferenceWorker from "./inference.worker.ts?worker";
 // -----------------------------------------------------------------------------
 
 /** Model base name (without precision suffix) */
-const MODEL_BASE = "/assets/BirdNET+_V3.0-preview3_Global_11K";
-const LABELS_URL_DEFAULT = "/assets/BirdNET+_V3.0-preview3_Global_11K_Labels.csv";
+const MODEL_BASE = "/assets/BirdNET+_V3.0-preview3.1_Global_11K";
+const LABELS_URL_DEFAULT = "/assets/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv";
 
 /** Get model URL for a given format */
 function getModelUrl(format: string): string {
   return `${MODEL_BASE}_${format}.onnx`;
+}
+
+/** Adds a cache-busting timestamp while preserving existing query parameters. */
+function addCacheBuster(url: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${Date.now()}`;
 }
 
 /** Maximum rows to display in detection table (for performance) */
@@ -430,8 +436,8 @@ async function loadModel(): Promise<void> {
     } else {
       // Load from URLs - use custom URL if provided, otherwise use format selector
       const customModelUrl = elements.modelUrl.value.trim();
-      const modelUrl = customModelUrl || getModelUrl(elements.modelFormat.value);
-      const labelsUrl = elements.labelsUrl.value || LABELS_URL_DEFAULT;
+      const modelUrl = addCacheBuster(customModelUrl || getModelUrl(elements.modelFormat.value));
+      const labelsUrl = addCacheBuster(elements.labelsUrl.value || LABELS_URL_DEFAULT);
       result = await callWorker<WorkerLoadModelResult>({
         type: "loadModel",
         modelUrl,
@@ -444,10 +450,10 @@ async function loadModel(): Promise<void> {
       setModelStatus("Model ready", true);
 
       // Show which execution provider was used
-      if (result.provider === "webgl") {
-        setProviderStatus("Provider: WebGL", "ok");
+      if (result.provider === "wasm") {
+        setProviderStatus("Provider: WASM (Recommended)", "ok");
       } else {
-        setProviderStatus("Provider: WASM (WebGL unavailable)", "warn");
+        setProviderStatus(`Provider: ${result.provider}`, "warn");
       }
     } else {
       throw new Error(result.error || "Failed to load model");

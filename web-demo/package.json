@@ -14,10 +14,11 @@
   },
   "dependencies": {
     "fft.js": "4.0.4",
-    "onnxruntime-web": "1.19.2"
+    "onnxruntime-web": "1.26.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.24",
+    "onnxruntime-node": "^1.26.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "typescript": "5.4.5",

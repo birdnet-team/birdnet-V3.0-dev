@@ -9,17 +9,17 @@
 
 /**
  * Default URL for the BirdNET+ ONNX model.
- * Using the V3.0-preview3 Global model with 11K species support.
+ * Using the V3.0-preview3.1 Global model with 11K species support.
  */
 export const MODEL_URL =
-  "./models/BirdNET+_V3.0-preview3_Global_11K_FP32.onnx";
+  "./assets/BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx";
 
 /**
  * Default URL for the species labels CSV file.
  * Contains scientific and common names for all 11K supported species.
  */
 export const LABELS_URL =
-  "./models/BirdNET+_V3.0-preview3_Global_11K_Labels.csv";
+  "./assets/BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv";
 
 // -----------------------------------------------------------------------------
 // Audio Processing Constants
