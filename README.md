@@ -118,7 +118,8 @@ Best for interactive exploration with visual feedback.
 # Start the app
 streamlit run app.py
 
-# Or with larger file upload limit (e.g., 2GB)
+# The repo config allows uploads up to 1GB by default.
+# Override temporarily for larger local files (e.g., 2GB):
 streamlit run app.py --server.maxUploadSize 2048
 ```
 
