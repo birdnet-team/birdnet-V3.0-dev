@@ -25,6 +25,10 @@ Analyze audio with BirdNET+ V3.0 developer preview models. This repository provi
 - No human voice detection yet
 - Limited non-target sound handling (rain, wind, engines)
 - Species list needs cleanup
+- The Preview 3.1 TensorFlow Protobuf model uses the classifier width produced by
+  96,000 audio samples (3 seconds at 32 kHz). Its input signature shows
+  ``(1, None)``, but a 64,000-sample call fails inside the compiled classifier.
+  Use the PyTorch or ONNX model for variable-length audio.
 
 > ⚠️ **Developer Preview Notice:** Models, labels, and code will change before final release.
 
