@@ -9,7 +9,7 @@ This page describes how BirdNET+ V3.0 Global 12K is built and trained. For how t
 | Backbone | EfficientNetV2-S, ImageNet-21k pretrained (`tf_efficientnetv2_s_in21k` from [timm](https://github.com/huggingface/pytorch-image-models)) |
 | Classifier | Three multi-label heads: global GeM pooling, temporal attention, frequency attention |
 | Head weights | 0.40 / 0.35 / 0.25 |
-| Input | 32 kHz mono waveform, any length (3 s matches training best) |
+| Input | 32 kHz waveform, shape `[batch, samples]`, any length (about 2–12 s matches training best). Stereo works as a batch of two. |
 | Spectrogram | 128-band log-mel, 2,048-point FFT, 512-sample hop, resized to 224 pixels high |
 | Outputs | 11,725 class scores and a 1280-d embedding |
 | Training data | Macaulay Library, iNaturalist, Xeno-canto, Animal Sound Archive Berlin, Observation.org, and non-public collections |
@@ -85,7 +85,7 @@ Each head gets its own loss: binary cross-entropy with logits plus sigmoid focal
 ### Data augmentation
 
 - **Audio and noise mixup.** Training samples are mixed with other recordings and with background noise, so the model learns to recognize overlapping calls and calls in noisy soundscapes.
-- **Variable durations.** Training chunks vary in length, so the model works on inputs of different lengths.
+- **Variable durations.** Training chunks vary in length (about 2–12 s), so the model works on inputs of different lengths.
 - **Spectrogram transforms.** Transformations of the spectrogram in time and frequency.
 - **Label smoothing.** Softens the targets to reduce overconfidence and the effect of label noise.
 - **Pseudo-labels.** Where pseudo-labels exist for a training recording, they replace the original multi-label targets with a probability of 85%.
