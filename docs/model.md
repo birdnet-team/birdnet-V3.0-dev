@@ -12,6 +12,7 @@ This page describes how BirdNET+ V3.0 Global 12K is built and trained. For how t
 | Input | 32 kHz mono waveform, any length (3 s matches training best) |
 | Spectrogram | 128-band log-mel, 2,048-point FFT, 512-sample hop, resized to 224 pixels high |
 | Outputs | 11,725 class scores and a 1280-d embedding |
+| Training data | Macaulay Library, iNaturalist, Xeno-canto, Animal Sound Archive Berlin, Observation.org, and non-public collections |
 | Compute | 1.38 GMAC per second of audio |
 | Optimizer | Adam, learning rate 0.001, cosine schedule with warmup |
 | Batch size / epochs | 42 / 40 |
@@ -47,6 +48,22 @@ The final score combines the three heads, weighted 0.40 (GeM), 0.35 (temporal) a
 The `_pruned` model files keep only one of the three heads. They are less than half the size, at the cost of some accuracy (scores differ by up to about 0.14 from the full model).
 
 ## Training
+
+### Data
+
+Most training recordings come from large public sound archives. The table shows the date each archive was last collected.
+
+| Archive | Collected up to |
+| --- | --- |
+| [Macaulay Library](https://www.macaulaylibrary.org/) | 17 Mar 2026 |
+| [iNaturalist](https://www.inaturalist.org/) | 12 Jan 2026 |
+| [Xeno-canto](https://xeno-canto.org/) | 6 Jan 2026 |
+| [Animal Sound Archive Berlin](https://www.tierstimmenarchiv.de/) (Tierstimmenarchiv) | 23 Apr 2025 |
+| [Observation.org](https://observation.org/) | 28 Dec 2024 |
+
+Training data also included non-public collections, such as validated snippets from collaborators.
+
+Recordings uploaded to these archives after these dates were not used for training. This makes them candidates for held-out tests, although they may come from the same sites or recordists as the training data.
 
 ### Classes
 
