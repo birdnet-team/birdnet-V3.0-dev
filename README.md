@@ -50,7 +50,7 @@ BirdNET+ V3.0 Global 12K (November 2026) recognizes 9,788 birds, 802 insects, 64
 - Nearly twice as many classes (11,725 vs. 6,522), with many more non-bird species
 - Variable-length input instead of fixed 3 s segments
 - 32 kHz input instead of 48 kHz
-- Improved architecture and training on a much larger, more diverse dataset
+- Improved architecture and training on a much larger, more diverse dataset (see [docs/model.md](docs/model.md))
 
 > **Before you build your own pipeline**, check whether these already do what you need:
 >
@@ -224,6 +224,7 @@ scores[:, ~mask] = 0
 
 ### Going further
 
+- Architecture, spectrogram settings, and training: [docs/model.md](docs/model.md).
 - Custom species subsets, other precisions, or other formats: [model-converter](https://github.com/birdnet-team/model-converter).
 - Microcontrollers: [birdnet-stm32](https://github.com/birdnet-team/birdnet-stm32) has a tiny model for the STM32N6 NPU.
 
@@ -248,6 +249,7 @@ analyze.py        Command-line batch analysis
 app.py            Streamlit demo
 examples/         Short standalone scripts
 examples/audio/   Example soundscape (2 min)
+docs/model.md     Model architecture and training
 docs/wabad.md     WABAD benchmark results
 ```
 
