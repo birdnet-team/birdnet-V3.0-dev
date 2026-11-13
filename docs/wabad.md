@@ -328,7 +328,7 @@ We also tried ESP AVES2 and AvesEcho in earlier runs. Both scored well below the
 - Asia is two sites (DONG, BRCAS) and Africa four. Regional rankings there are tentative.
 - ROTOK (New Zealand) is included, although its annotations may be offset in time. It pulls the Oceania numbers down for every model.
 - APs from different tables can rest on different species sets and are then not directly comparable: BirdNET+ V3.0 scores 0.677 on the 80 North American species shared by five models and 0.680 on the 79 it shares with HawkEars as well.
-- All models learned from public sound archives. We can't rule out that some trained on recordings from the same places or recordists as WABAD.
+- All models learned from public sound archives. BirdNET+ V3.0 was not trained on WABAD (see [training data](model.md#data)), but we can't rule out that some models trained on recordings from the same places or recordists as WABAD.
 - BirdNET Tiny N6 model cards also report WABAD, but on 61 sites and their own 1,013 classes. Those numbers are not comparable with this page. Restricting the species list hides much of the tropical diversity: at BRCAS in Taiwan, BirdCODE scores 0.122 on the 414 calls of species in that list and 0.672 on all 2,729 calls.
 
 ## Appendix: every species, BirdNET+ V3.0
