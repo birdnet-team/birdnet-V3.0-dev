@@ -9,11 +9,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from scipy.signal import spectrogram
 
 import birdnet_v3 as bn
 
-st.set_page_config(page_title="BirdNET+ V3.0", page_icon="img/logo-birdnet-circle.png", layout="wide")
+ROOT = Path(__file__).resolve().parent
+LOGO = str(ROOT / "img" / "logo-birdnet-circle.png")
+EXAMPLE = ROOT / "examples" / "audio" / "soundscape.wav"
+
+st.set_page_config(page_title="BirdNET+ V3.0", page_icon=LOGO, layout="wide")
 
 
 @st.cache_resource(show_spinner="Loading model...")
@@ -39,24 +42,23 @@ def analyze(data: bytes, model_path: str, chunk_len: float, overlap: float):
     return audio, scores, starts
 
 
-def plot_spectrogram(audio: np.ndarray) -> plt.Figure:
-    f, t, s = spectrogram(audio, fs=bn.SAMPLE_RATE, nperseg=1024, noverlap=768)
+def plot_spectrogram(audio: np.ndarray, n_fft: int = 1024, max_frames: int = 3000) -> plt.Figure:
+    # At most ``max_frames`` frames, so long recordings stay fast and small in memory.
+    audio = np.pad(audio, (0, max(0, n_fft - len(audio))))
+    hop = max(n_fft // 4, (len(audio) - n_fft) // max_frames + 1)
+    starts = np.arange(0, len(audio) - n_fft + 1, hop)
+    frames = audio[starts[:, None] + np.arange(n_fft)] * np.hanning(n_fft).astype(np.float32)
+    db = 20 * np.log10(np.abs(np.fft.rfft(frames, axis=1)).T + 1e-6)
     fig, ax = plt.subplots(figsize=(14, 2.5))
-    ax.pcolormesh(
-        t,
-        f / 1000,
-        10 * np.log10(s + 1e-10),
-        shading="auto",
-        cmap="magma",
-        vmin=np.percentile(10 * np.log10(s + 1e-10), 50),
-    )
+    extent = (0, len(audio) / bn.SAMPLE_RATE, 0, bn.SAMPLE_RATE / 2000)
+    ax.imshow(db, origin="lower", aspect="auto", extent=extent, cmap="magma", vmin=np.percentile(db, 50))
     ax.set(xlabel="Time (s)", ylabel="kHz", ylim=(0, 12))
     fig.tight_layout()
     return fig
 
 
 # --- Sidebar -------------------------------------------------------------------
-st.sidebar.image("img/logo-birdnet-circle.png", width=120)
+st.sidebar.image(LOGO, width=120)
 models = sorted(str(p) for ext in ("onnx", "tflite", "pt") for p in bn.MODEL_DIR.glob(f"{bn.MODEL_NAME}*.{ext}"))
 if str(bn.DEFAULT_MODEL) not in models:
     models.insert(0, str(bn.DEFAULT_MODEL))  # downloaded on first use
@@ -94,7 +96,7 @@ if uploaded is not None:
 elif st.button("Try the example recording", on_click=lambda: st.session_state.update(example=True)) or (
     st.session_state.get("example") or "example" in st.query_params
 ):
-    data, name = Path("example/soundscape.wav").read_bytes(), "soundscape.wav"
+    data, name = EXAMPLE.read_bytes(), EXAMPLE.name
 else:
     st.stop()
 

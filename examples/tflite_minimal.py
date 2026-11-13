@@ -1,7 +1,7 @@
 """BirdNET+ V3.0 inference with LiteRT (TFLite), e.g., for Android, Raspberry Pi, or edge.
 
     pip install numpy scipy soundfile ai-edge-litert
-    curl -L -o models/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite \
+    curl -L --create-dirs -o models/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite \
       "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite?download=1"
     python examples/tflite_minimal.py
 """
@@ -16,7 +16,7 @@ from scipy.signal import resample_poly
 MODEL = "models/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite"
 LABELS = "models/BirdNET+_V3.0_Global_12K_Labels.csv"
 
-audio, sr = sf.read("example/soundscape.wav", dtype="float32", always_2d=True)
+audio, sr = sf.read("examples/audio/soundscape.wav", dtype="float32", always_2d=True)
 audio = resample_poly(audio.mean(axis=1), 32000, sr).astype(np.float32)
 
 interpreter = Interpreter(MODEL, num_threads=4)

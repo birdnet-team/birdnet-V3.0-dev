@@ -1,7 +1,7 @@
 """BirdNET+ V3.0 inference with PyTorch (TorchScript), on CPU or GPU.
 
     pip install numpy scipy soundfile torch
-    curl -L -o models/BirdNET+_V3.0_Global_12K_FP32.pt \
+    curl -L --create-dirs -o models/BirdNET+_V3.0_Global_12K_FP32.pt \
       "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_FP32.pt?download=1"
     python examples/torchscript_minimal.py
 """
@@ -17,7 +17,7 @@ MODEL = "models/BirdNET+_V3.0_Global_12K_FP32.pt"
 LABELS = "models/BirdNET+_V3.0_Global_12K_Labels.csv"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-audio, sr = sf.read("example/soundscape.wav", dtype="float32", always_2d=True)
+audio, sr = sf.read("examples/audio/soundscape.wav", dtype="float32", always_2d=True)
 audio = resample_poly(audio.mean(axis=1), 32000, sr).astype(np.float32)
 x = torch.from_numpy(audio[: 10 * 3 * 32000].reshape(10, -1)).to(device)  # 10 chunks of 3 s
 

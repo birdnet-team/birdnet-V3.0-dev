@@ -23,7 +23,8 @@ EMBEDDING_DIM = 1280
 
 MODEL_NAME = "BirdNET+_V3.0_Global_12K"
 MODEL_URL = "https://zenodo.org/records/24162518/files/{}?download=1"
-MODEL_DIR = Path(os.environ.get("BIRDNET_MODEL_DIR", "models"))
+# Next to this file by default, so scripts find the models from any working directory.
+MODEL_DIR = Path(os.environ.get("BIRDNET_MODEL_DIR", Path(__file__).resolve().parent / "models"))
 DEFAULT_MODEL = MODEL_DIR / f"{MODEL_NAME}_FP16.onnx"
 DEFAULT_LABELS = MODEL_DIR / f"{MODEL_NAME}_Labels.csv"
 
@@ -48,7 +49,11 @@ def ensure_file(path: str | Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading {name} ...")
     tmp = path.with_suffix(path.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)
+    try:
+        urllib.request.urlretrieve(url, tmp)
+    except BaseException:  # also Ctrl+C: never leave a partial file behind
+        tmp.unlink(missing_ok=True)
+        raise
     tmp.replace(path)
     return path
 
@@ -158,13 +163,15 @@ class Model:
 
     def predict(self, chunks: np.ndarray, batch_size: int = 16) -> tuple[np.ndarray, np.ndarray]:
         """Run the model on ``chunks`` ([N, samples] float32 at 32 kHz)."""
+        if len(chunks) == 0:
+            # Run one dummy chunk to get the class count, so the shapes are [0, classes] and [0, 1280].
+            s, e = self._split(self._run(np.zeros((1, SAMPLE_RATE), np.float32)))
+            return s[:0].astype(np.float32), e[:0].astype(np.float32)
         scores, embs = [], []
         for i in range(0, len(chunks), batch_size):
             s, e = self._split(self._run(np.ascontiguousarray(chunks[i : i + batch_size], dtype=np.float32)))
             scores.append(s)
             embs.append(e)
-        if not scores:
-            return np.zeros((0, 0), np.float32), np.zeros((0, EMBEDDING_DIM), np.float32)
         # Digital silence (zero variance) yields NaN; treat it as "nothing detected".
         return (
             np.nan_to_num(np.concatenate(scores)).astype(np.float32),

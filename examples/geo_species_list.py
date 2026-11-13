@@ -22,14 +22,14 @@ ap.add_argument("--lang", default="en", help="Common name language (default: en)
 ap.add_argument("-o", "--output", default="species_list.txt")
 args = ap.parse_args()
 
-probs = bn.GeoModel().predict(args.lat, args.lon, args.week)
+labels = bn.load_labels()
 name = "common_name" if args.lang == "en" else f"common_name_{args.lang}"
+if name not in labels[0]:
+    ap.error(f"unknown language '{args.lang}'")
+
+probs = bn.GeoModel().predict(args.lat, args.lon, args.week)
 hits = sorted(
-    (
-        (probs[r["scientific_name"]], r)
-        for r in bn.load_labels()
-        if probs.get(r["scientific_name"], 0) >= args.threshold
-    ),
+    ((probs[r["scientific_name"]], r) for r in labels if probs.get(r["scientific_name"], 0) >= args.threshold),
     key=lambda h: -h[0],
 )
 
