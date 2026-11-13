@@ -63,7 +63,9 @@ Most training recordings come from large public sound archives. The table shows 
 
 Training data also included non-public collections, such as validated snippets from collaborators.
 
-Recordings uploaded to these archives after these dates were not used for training. This makes them candidates for held-out tests, although they may come from the same sites or recordists as the training data.
+### Data for evaluation
+
+[WABAD](https://zenodo.org/records/14191524) and [BirdSet](https://huggingface.co/datasets/DBD-research-group/BirdSet) were not used for training, so you can use both to evaluate the model (see our [WABAD results](wabad.md)). For BirdSet, use the soundscape test sets: its training split comes from Xeno-canto, which overlaps with our training data. Recordings uploaded to the archives above after their cutoff dates were not used either. Keep in mind that test recordings may come from the same sites or recordists as the training data.
 
 ### Classes
 
