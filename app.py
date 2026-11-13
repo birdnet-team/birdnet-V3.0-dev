@@ -14,7 +14,7 @@ import birdnet_v3 as bn
 
 ROOT = Path(__file__).resolve().parent
 LOGO = str(ROOT / "img" / "logo-birdnet-circle.png")
-EXAMPLE = ROOT / "example" / "soundscape.wav"
+EXAMPLE = ROOT / "examples" / "audio" / "soundscape.wav"
 
 st.set_page_config(page_title="BirdNET+ V3.0", page_icon=LOGO, layout="wide")
 

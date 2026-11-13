@@ -68,7 +68,7 @@ python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-python analyze.py example/soundscape.wav   # downloads the model on first run, writes results.csv
+python analyze.py examples/audio/soundscape.wav   # downloads the model on first run, writes results.csv
 streamlit run app.py                       # interactive demo in your browser
 ```
 
@@ -120,7 +120,7 @@ The scripts in this repository download the FP16 ONNX model and labels to `model
 ### Command line: `analyze.py`
 
 ```bash
-python analyze.py example/soundscape.wav                         # one file -> results.csv
+python analyze.py examples/audio/soundscape.wav                         # one file -> results.csv
 python analyze.py recordings/ -o results.csv --min-conf 0.5      # whole folder, recursive
 python analyze.py recordings/ --lat 42.48 --lon -76.45 --week 20 # only species likely at this place and week
 python analyze.py recordings/ --groups Aves --lang de            # birds only, German names
@@ -172,7 +172,7 @@ import birdnet_v3 as bn
 
 model = bn.Model()  # FP16 ONNX; also takes .tflite or .pt paths
 labels = bn.load_labels()
-chunks, starts = bn.chunk(bn.load_audio("example/soundscape.wav"), length=3.0)
+chunks, starts = bn.chunk(bn.load_audio("examples/audio/soundscape.wav"), length=3.0)
 scores, embeddings = model.predict(chunks)  # [N, 11725], [N, 1280]
 
 mask = bn.GeoModel().mask(labels, lat=42.48, lon=-76.45, week=20)
@@ -247,8 +247,8 @@ birdnet_v3.py     Reference code: audio loading, chunking, all model formats, Ge
 analyze.py        Command-line batch analysis
 app.py            Streamlit demo
 examples/         Short standalone scripts
+examples/audio/   Example soundscape (2 min)
 docs/wabad.md     WABAD benchmark results
-example/          Example soundscape (2 min)
 ```
 
 ## Contributing

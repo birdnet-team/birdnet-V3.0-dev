@@ -3,7 +3,7 @@
 Embeddings (1280-d) are useful beyond the 11,725 classes: similarity search,
 clustering, or training a small classifier for sounds the model does not know.
 
-    python examples/embeddings_search.py example/soundscape.wav --query-start 18 --folder example/
+    python examples/embeddings_search.py examples/audio/soundscape.wav --query-start 18 --folder examples/audio/
 """
 
 import argparse

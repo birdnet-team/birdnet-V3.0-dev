@@ -23,7 +23,7 @@ Wrong or missed detections help us improve future models. Please include the aud
 
 1. Fork the repo and create a branch from `main`.
 2. Keep examples short and self-explanatory; prefer one clear script over a configurable framework.
-3. Run `ruff check .` and `ruff format .`, and make sure `python analyze.py example/soundscape.wav` still works.
+3. Run `ruff check .` and `ruff format .`, and make sure `python analyze.py examples/audio/soundscape.wav` still works.
 4. Keep commits small and focused; write clear commit messages.
 5. Open a pull request with a description of what changed and why.
 

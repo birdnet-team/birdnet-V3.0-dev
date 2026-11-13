@@ -7,7 +7,7 @@
       "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_Labels.csv?download=1"
     python examples/onnx_minimal.py
 
-(``python analyze.py example/soundscape.wav`` also downloads both files.)
+(``python analyze.py examples/audio/soundscape.wav`` also downloads both files.)
 """
 
 import csv
@@ -20,7 +20,7 @@ from scipy.signal import resample_poly
 MODEL = "models/BirdNET+_V3.0_Global_12K_FP16.onnx"
 LABELS = "models/BirdNET+_V3.0_Global_12K_Labels.csv"
 
-audio, sr = sf.read("example/soundscape.wav", dtype="float32", always_2d=True)
+audio, sr = sf.read("examples/audio/soundscape.wav", dtype="float32", always_2d=True)
 audio = resample_poly(audio.mean(axis=1), 32000, sr).astype(np.float32)  # average channels, 32 kHz
 
 # Input: float32 [batch, samples]. Any length works; 3 s chunks match training best.

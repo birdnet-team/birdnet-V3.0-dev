@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
           key: models-v3.0-geo-v3.0.4
       - name: Analyze example (FP16 ONNX + Geomodel)
         run: |
-          python analyze.py example/soundscape.wav --lat 42.48 --lon -76.45 --week 20 -o results.csv
+          python analyze.py examples/audio/soundscape.wav --lat 42.48 --lon -76.45 --week 20 -o results.csv
           grep -q "Poecile atricapillus" results.csv
       - name: Run ONNX example
         run: python examples/onnx_minimal.py

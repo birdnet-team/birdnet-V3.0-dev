@@ -163,13 +163,15 @@ class Model:
 
     def predict(self, chunks: np.ndarray, batch_size: int = 16) -> tuple[np.ndarray, np.ndarray]:
         """Run the model on ``chunks`` ([N, samples] float32 at 32 kHz)."""
+        if len(chunks) == 0:
+            # Run one dummy chunk to get the class count, so the shapes are [0, classes] and [0, 1280].
+            s, e = self._split(self._run(np.zeros((1, SAMPLE_RATE), np.float32)))
+            return s[:0].astype(np.float32), e[:0].astype(np.float32)
         scores, embs = [], []
         for i in range(0, len(chunks), batch_size):
             s, e = self._split(self._run(np.ascontiguousarray(chunks[i : i + batch_size], dtype=np.float32)))
             scores.append(s)
             embs.append(e)
-        if not scores:
-            return np.zeros((0, 0), np.float32), np.zeros((0, EMBEDDING_DIM), np.float32)
         # Digital silence (zero variance) yields NaN; treat it as "nothing detected".
         return (
             np.nan_to_num(np.concatenate(scores)).astype(np.float32),

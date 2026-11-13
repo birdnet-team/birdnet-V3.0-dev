@@ -2,10 +2,10 @@
 """Analyze audio files or folders with BirdNET+ V3.0 and write detections to CSV.
 
 Examples:
-    python analyze.py example/soundscape.wav
+    python analyze.py examples/audio/soundscape.wav
     python analyze.py recordings/ --min-conf 0.5 --lang de -o results.csv
     python analyze.py recordings/ --lat 42.48 --lon -76.45 --week 20
-    python analyze.py example/soundscape.wav --model models/BirdNET+_V3.0_Global_12K_FP16.tflite
+    python analyze.py examples/audio/soundscape.wav --model models/BirdNET+_V3.0_Global_12K_FP16.tflite
 """
 
 import argparse
