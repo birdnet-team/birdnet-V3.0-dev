@@ -2,7 +2,7 @@
   <img src="img/logo-birdnet-circle.png" width="250" alt="BirdNET Logo">
 </p>
 
-<h1 align="center">BirdNET+ V3.0</h1>
+<h1 align="center">BirdNET+ V3.0 models and code examples</h1>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
