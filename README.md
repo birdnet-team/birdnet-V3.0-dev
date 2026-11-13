@@ -25,7 +25,7 @@ BirdNET+ V3.0 Global 12K (November 2026) recognizes 9,788 birds, 802 insects, 64
 
 **Changes compared to BirdNET V2.4:**
 
-- About twice the average precision on [WABAD](docs/wabad.md) (0.552 vs. 0.272)
+- About twice the average precision on [WABAD](#benchmark) (0.552 vs. 0.272)
 - Nearly twice as many classes (11,725 vs. 6,522), with many more non-bird species
 - Variable-length input instead of fixed 3 s segments
 - 32 kHz input instead of 48 kHz
@@ -37,6 +37,29 @@ BirdNET+ V3.0 Global 12K (November 2026) recognizes 9,788 birds, 802 insects, 64
 > - **[BirdNET-Analyzer](https://github.com/birdnet-team/BirdNET-Analyzer)**: GUI and CLI for batch analysis, result review, and training custom classifiers.
 >
 > This repository is for working with the model files directly: integrating them into your own software, apps, or devices.
+
+## Benchmark
+
+BirdNET+ V3.0 is the most accurate of five large bird sound classifiers on [WABAD](https://zenodo.org/records/14191524), a public set of expert-annotated soundscapes from 66 sites on six continents (88,967 calls, about 1,000 species). It also uses a fraction of the compute of the closest competitor.
+
+![Precision-recall curves on WABAD](docs/figures/wabad_pr_xkcd_5models.png)
+
+| Model | AP | GMAC per second of audio |
+|---|---:|---:|
+| **BirdNET+ V3.0** | **0.552** | 1.38 |
+| BirdCODE | 0.536 | 33.29 |
+| AudioProtoPNet | 0.398 | 34.04 |
+| Perch 2.0 | 0.351 | 1.46 |
+| BirdNET V2.4 | 0.272 | 0.135 |
+
+- **AP** (average precision) measures how well a model ranks true detections above false ones, from 0 to 1 (higher is better). It is pooled over all 3 s windows and species, on the 945 species all five models can predict, so no threshold has to be chosen.
+- **GMAC per second of audio** is the compute a model needs: billions of multiply-accumulate operations (the basic step of a neural network) to process one second of audio. It does not depend on hardware, so it compares models fairly; lower means faster, cheaper analysis of large archives and longer battery life on small devices.
+
+BirdNET+ V3.0 roughly doubles the AP of BirdNET V2.4 and leads in five of seven regions. It edges out BirdCODE with about a twenty-fourth of the compute, and needs about the same compute as Perch 2.0 while scoring much higher. In the plot below, up and to the left is better; note the logarithmic compute axis.
+
+![AP against compute on WABAD](docs/figures/wabad_ap_vs_macs.png)
+
+See [docs/wabad.md](docs/wabad.md) for results by region, site, and species, and for how we evaluated.
 
 ## Models
 
@@ -170,22 +193,6 @@ scores[:, ~mask] = 0
 
 - Custom species subsets, other precisions, or other formats: [model-converter](https://github.com/birdnet-team/model-converter).
 - Microcontrollers: [birdnet-stm32](https://github.com/birdnet-team/birdnet-stm32) has a tiny model for the STM32N6 NPU.
-
-## Benchmark
-
-![Precision-recall curves on WABAD](docs/figures/wabad_pr_xkcd_5models.png)
-
-On [WABAD](https://zenodo.org/records/14191524) (66 sites on six continents, 88,967 expert-annotated calls), BirdNET+ V3.0 has the highest average precision overall and in five of seven regions, at a fraction of the compute of the next best model:
-
-| Model | AP | GMAC per second of audio |
-|---|---:|---:|
-| **BirdNET+ V3.0** | **0.552** | 1.38 |
-| BirdCODE | 0.536 | 33.29 |
-| AudioProtoPNet | 0.398 | 34.04 |
-| Perch 2.0 | 0.351 | 1.46 |
-| BirdNET V2.4 | 0.272 | 0.135 |
-
-AP is pooled over all 3 s windows on the 945 species all five models can predict. See [docs/wabad.md](docs/wabad.md) for results by region, site, and species, and for how we evaluated.
 
 ## BirdNET ecosystem
 
