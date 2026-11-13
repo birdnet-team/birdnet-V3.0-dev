@@ -19,6 +19,28 @@
   This repository is the developer entry point: model files, reference code, examples, tips, and benchmarks.
 </p>
 
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#benchmark">Benchmark</a> ·
+  <a href="#models">Models</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#tips-and-details">Tips</a> ·
+  <a href="#birdnet-ecosystem">Ecosystem</a> ·
+  <a href="#citation">Citation</a>
+</p>
+
+## Contents
+
+- [Overview](#overview)
+- [Quick start](#quick-start)
+- [Benchmark](#benchmark)
+- [Models](#models)
+- [Usage](#usage): [command line](#command-line-analyzepy) · [Streamlit demo](#streamlit-demo-apppy) · [examples](#examples) · [your own code](#in-your-own-python-code)
+- [Tips and details](#tips-and-details): [input](#input) · [output](#output) · [labels](#labels) · [precision and size](#precision-and-size) · [practical tips](#practical-tips) · [going further](#going-further)
+- [BirdNET ecosystem](#birdnet-ecosystem)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing) · [License](#license) · [Acceptable Use](#acceptable-use) · [Citation](#citation) · [Funding](#funding) · [Partners](#partners)
+
 ## Overview
 
 BirdNET+ V3.0 Global 12K (November 2026) recognizes 9,788 birds, 802 insects, 649 amphibians, 419 mammals (including humans), 35 fishes, 15 reptiles, and 1 arachnid, plus 16 non-animal classes such as gun, chainsaw, and siren. Labels are linked to the [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) with common names in 36 languages.
@@ -37,6 +59,21 @@ BirdNET+ V3.0 Global 12K (November 2026) recognizes 9,788 birds, 802 insects, 64
 > - **[BirdNET-Analyzer](https://github.com/birdnet-team/BirdNET-Analyzer)**: GUI and CLI for batch analysis, result review, and training custom classifiers.
 >
 > This repository is for working with the model files directly: integrating them into your own software, apps, or devices.
+
+## Quick start
+
+```bash
+git clone https://github.com/birdnet-team/birdnet-V3.0-dev.git
+cd birdnet-V3.0-dev
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+python analyze.py example/soundscape.wav   # downloads the model on first run, writes results.csv
+streamlit run app.py                       # interactive demo in your browser
+```
+
+Optional backends: `pip install ai-edge-litert` for `.tflite` models, `pip install torch` for `.pt` models, and `onnxruntime-gpu` instead of `onnxruntime` for NVIDIA GPUs.
 
 ## Benchmark
 
@@ -78,18 +115,6 @@ Download from [Zenodo](https://zenodo.org/records/24162518) (DOI [10.5281/zenodo
 | `_Source_Checkpoint.zip` | TorchScript + ONNX | 838 MB | Research: unpruned model with all 16,852 training classes |
 
 The scripts in this repository download the FP16 ONNX model and labels to `models/` on first use (set `BIRDNET_MODEL_DIR` to change the location).
-
-## Setup
-
-```bash
-git clone https://github.com/birdnet-team/birdnet-V3.0-dev.git
-cd birdnet-V3.0-dev
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Optional backends: `pip install ai-edge-litert` for `.tflite` models, `pip install torch` for `.pt` models, and `onnxruntime-gpu` instead of `onnxruntime` for NVIDIA GPUs.
 
 ## Usage
 
@@ -155,7 +180,7 @@ scores[:, ~mask] = 0
 
 ## Tips and details
 
-**Input**
+### Input
 
 - Mono float32 waveform in [-1, 1] at **32 kHz**, shape `[batch, samples]`. The spectrogram is computed inside the model, so you only need to resample audio.
 - Any length works, but **3 s chunks** match training best. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
@@ -163,33 +188,33 @@ scores[:, ~mask] = 0
 - Digital silence (all zeros, or any zero-variance input) returns **NaN**. Replace NaN with 0, or skip silent chunks.
 - Zero-pad the last chunk of a file to the full chunk length.
 
-**Output**
+### Output
 
 - Two outputs: `predictions` (scores, one per class) and `embeddings_out` (1280-d). In LiteRT, the output names are generic; tell them apart by size.
 - Scores are independent per class (0–1, multi-label), not a softmax: several species can score high in the same chunk, and scores do not sum to 1.
 - Scores are not calibrated probabilities. 0.25 is a reasonable starting threshold. On WABAD, 65% of annotated calls had a window scoring 0.25 or higher for the right species, and 54% scored 0.5 or higher. Some species rank well but score low, so species-specific thresholds help.
 - Embeddings are useful for similarity search, clustering, and training small classifiers for sounds or call types the model does not know.
 
-**Labels**
+### Labels
 
 - `BirdNET+_V3.0_Global_12K_Labels.csv` is comma-separated, one row per model output, in output order (`ix`).
 - Columns: `birdnet_id` (stable BirdNET+ Taxonomy ID, e.g. `BN00001`), `scientific_name`, `common_name`, `taxon_group` (`Aves`, `Insecta`, `Amphibia`, `Mammalia`, `Actinopterygii`, `Reptilia`, `Arachnida`, `Anthropogenic`, `Geophony`, `Music`), `inat_id`, `ebird_code`, and `common_name_<lang>` for 36 languages. Fall back to `common_name` when a translation is empty.
 - Look up more species metadata (descriptions, images, aliases) in the [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/).
 
-**Precision and size**
+### Precision and size
 
 - FP16 is half the size of FP32 with minimal accuracy loss. On the example soundscape, the largest score difference from FP32 TorchScript was 0.019 (FP16 ONNX) and 0.005 (FP16 LiteRT).
 - The pruned models keep one of the three classifier heads. They are less than half the size, and scores differ by up to about 0.14 from the full model. Use them where size matters more than the last bit of accuracy.
 - The FP16 ONNX model analyzes 2 minutes of audio in about 2.5 s on an 8-thread desktop CPU.
 
-**Practical tips**
+### Practical tips
 
 - **Filter by location.** The [Geomodel](https://github.com/birdnet-team/geomodel) removes species that are unlikely at a given place and time, a simple way to reduce false positives. It covers 10,874 of the 11,725 classes; uncovered classes (including all non-animal classes) are never filtered.
 - **Overlap chunks** (e.g., `--overlap 1.5`) to catch calls that straddle chunk boundaries, at the cost of more compute.
 - **Pool over time** for presence/absence per file or day: the maximum score per species over all chunks is a simple, effective summary.
 - **Report the model file and precision** with your results so they stay reproducible.
 
-**Going further**
+### Going further
 
 - Custom species subsets, other precisions, or other formats: [model-converter](https://github.com/birdnet-team/model-converter).
 - Microcontrollers: [birdnet-stm32](https://github.com/birdnet-team/birdnet-stm32) has a tiny model for the STM32N6 NPU.
