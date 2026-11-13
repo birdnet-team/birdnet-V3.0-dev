@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+title: "BirdNET+ V3.0"
+message: >-
+  If you use the BirdNET+ V3.0 models or this code, please cite the
+  model release using the metadata from this file.
+type: software
+authors:
+  - family-names: Lasseck
+    given-names: Mario
+    affiliation: Chemnitz University of Technology
+  - family-names: Eibl
+    given-names: Maximilian
+    affiliation: Chemnitz University of Technology
+    orcid: "https://orcid.org/0000-0002-9519-2708"
+  - family-names: Klinck
+    given-names: Holger
+    affiliation: Cornell Lab of Ornithology
+    orcid: "https://orcid.org/0000-0003-1078-7268"
+  - family-names: Kahl
+    given-names: Stefan
+    affiliation: Cornell Lab of Ornithology; Chemnitz University of Technology
+    orcid: "https://orcid.org/0000-0002-2411-8877"
+abstract: >-
+  BirdNET+ V3.0 identifies 11,709 animal species (9,788 birds, plus insects,
+  amphibians, mammals, fishes, reptiles, and an arachnid) and 16 non-animal
+  sound classes in 32 kHz audio. Models are released in TorchScript, ONNX,
+  LiteRT (TFLite), TensorFlow SavedModel, and Core ML formats. This repository
+  provides reference code, examples, and benchmark results.
+version: "3.0"
+date-released: "2026-11-13"
+doi: 10.5281/zenodo.24162518
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24162518
+    description: BirdNET+ V3.0 model files (this version)
+  - type: doi
+    value: 10.5281/zenodo.17571189
+    description: BirdNET+ V3.0 model files (all versions)
+repository-code: "https://github.com/birdnet-team/birdnet-V3.0-dev"
+url: "https://zenodo.org/records/24162518"
+license:
+  - MIT
+  - Apache-2.0
+keywords:
+  - BirdNET
+  - bioacoustics
+  - acoustic monitoring
+  - bird sound classification
+  - deep learning
