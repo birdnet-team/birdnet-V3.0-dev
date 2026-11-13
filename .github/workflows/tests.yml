@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    env:
+      BIRDNET_MODEL_DIR: models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: models-v3.0-geo-v3.0.4
+      - name: Analyze example (FP16 ONNX + Geomodel)
+        run: |
+          python analyze.py example/soundscape.wav --lat 42.48 --lon -76.45 --week 20 -o results.csv
+          grep -q "Poecile atricapillus" results.csv
+      - name: Run ONNX example
+        run: python examples/onnx_minimal.py

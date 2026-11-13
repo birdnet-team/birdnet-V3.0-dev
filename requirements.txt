@@ -1,10 +1,15 @@
-torch>=2.1
-librosa>=0.10
-soundfile>=0.12
+# Core: birdnet_v3.py, analyze.py, examples (ONNX backend)
 numpy>=1.24
 scipy>=1.10
+soundfile>=0.12
+onnxruntime>=1.17
+
+# Streamlit demo (app.py)
+streamlit>=1.40
 pandas>=2.0
 matplotlib>=3.7
-streamlit>=1.32
 
-onnxruntime>=1.16.0
+# Optional backends, install as needed:
+# ai-edge-litert>=1.2   # .tflite models
+# torch>=2.1            # .pt models
+# onnxruntime-gpu       # ONNX on NVIDIA GPUs (replaces onnxruntime)
