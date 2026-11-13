@@ -35,7 +35,7 @@
 - [Benchmark](#benchmark)
 - [Models](#models)
 - [Usage](#usage): [command line](#command-line-analyzepy) · [Streamlit demo](#streamlit-demo-apppy) · [examples](#examples) · [your own code](#in-your-own-python-code)
-- [Tips and details](#tips-and-details): [input](#input) · [output](#output) · [labels](#labels) · [precision and size](#precision-and-size) · [practical tips](#practical-tips) · [going further](#going-further)
+- [Tips and details](#tips-and-details): [input](#input) · [output](#output) · [labels](#labels) · [precision and size](#precision-and-size) · [GPU](#gpu) · [practical tips](#practical-tips) · [going further](#going-further)
 - [BirdNET ecosystem](#birdnet-ecosystem)
 - [Repository layout](#repository-layout)
 - [Contributing](#contributing) · [License](#license) · [Acceptable Use](#acceptable-use) · [Citation](#citation) · [Funding](#funding) · [Partners](#partners)
@@ -149,6 +149,8 @@ streamlit run app.py
 
 Upload a recording (or try the example) to see the spectrogram, top species, and detections, with model, language, taxon group, and location filters. Results download as CSV or Audacity labels.
 
+Streamlit limits uploads to 200 MB. For longer recordings, raise the limit (in MB), e.g. `streamlit run app.py --server.maxUploadSize 2048`, or use `analyze.py`.
+
 ### Examples
 
 Short, standalone scripts in [`examples/`](examples/). Run them from the repository root.
@@ -185,6 +187,7 @@ scores[:, ~mask] = 0
 - Stereo and multichannel recordings work: average the channels (as the scripts here do), or pass each channel as its own row in the batch to analyze the microphones separately.
 - Any length works, but **3 s chunks** match training best. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
 - ONNX and TorchScript accept any batch size. LiteRT models have a fixed batch size of 1: resize the input to `[1, samples]` and loop.
+- The TF SavedModel (`_FP32_Protobuf.zip`) only accepts `[1, 96000]` (one 3 s chunk), although its signature shows `(1, None)`. Loop over chunks, or use ONNX or TorchScript for other lengths and batch sizes.
 - Digital silence (all zeros, or any zero-variance input) returns **NaN**. Replace NaN with 0, or skip silent chunks.
 - Zero-pad the last chunk of a file to the full chunk length.
 
@@ -206,6 +209,11 @@ scores[:, ~mask] = 0
 - FP16 is half the size of FP32 with minimal accuracy loss. On the example soundscape, the largest score difference from FP32 TorchScript was 0.019 (FP16 ONNX) and 0.005 (FP16 LiteRT).
 - The pruned models keep one of the three classifier heads. They are less than half the size, and scores differ by up to about 0.14 from the full model. Use them where size matters more than the last bit of accuracy.
 - The FP16 ONNX model analyzes 2 minutes of audio in about 2.5 s on an 8-thread desktop CPU.
+
+### GPU
+
+- **NVIDIA GPUs: use TorchScript for the highest throughput.** ONNX Runtime has no CUDA kernel for the STFT op, so the spectrogram runs on the CPU even with the CUDA provider. On a TITAN RTX (batch of 128 × 3 s), FP32 TorchScript takes 0.7 s and FP16 ONNX takes 1.75 s, three quarters of which is the STFT.
+- Load TorchScript models directly onto the device with `torch.jit.load(path, map_location="cuda")`, as the scripts here do. Calling `model.to("cuda")` after loading leaves the mel filterbank on the CPU and fails with a device mismatch.
 
 ### Practical tips
 
