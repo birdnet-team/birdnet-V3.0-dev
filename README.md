@@ -9,7 +9,6 @@
   <a href="MODEL_LICENSE.md"><img src="https://img.shields.io/badge/model%20license-Apache--2.0-blue.svg" alt="Model license: Apache 2.0"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="https://doi.org/10.5281/zenodo.24162518"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.24162518.svg" alt="DOI"></a>
-  <a href="https://github.com/birdnet-team/birdnet-V3.0-dev/actions/workflows/tests.yml"><img src="https://github.com/birdnet-team/birdnet-V3.0-dev/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/model-V3.0-green.svg" alt="BirdNET+ V3.0">
   <img src="https://img.shields.io/badge/species-11%2C709-yellow.svg" alt="11,709 animal species">
 </p>
