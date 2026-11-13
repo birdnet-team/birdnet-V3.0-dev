@@ -113,7 +113,7 @@ Download from [Zenodo](https://zenodo.org/records/24162518) (DOI [10.5281/zenodo
 | `_Labels.csv` / `_Labels.xlsx` | CSV / Excel | 8 / 5 MB | One row per model output, same order for all models |
 | `_Source_Checkpoint.zip` | TorchScript + ONNX | 838 MB | Research: unpruned model with all 16,852 training classes |
 
-The scripts in this repository download the FP16 ONNX model and labels to `models/` on first use (set `BIRDNET_MODEL_DIR` to change the location).
+The scripts in this repository download the FP16 ONNX model and labels to `models/` next to `birdnet_v3.py` on first use (set `BIRDNET_MODEL_DIR` to change the location).
 
 ## Usage
 

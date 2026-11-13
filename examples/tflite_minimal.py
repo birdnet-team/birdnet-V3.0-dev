@@ -1,7 +1,7 @@
 """BirdNET+ V3.0 inference with LiteRT (TFLite), e.g., for Android, Raspberry Pi, or edge.
 
     pip install numpy scipy soundfile ai-edge-litert
-    curl -L -o models/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite \
+    curl -L --create-dirs -o models/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite \
       "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_FP16_pruned.tflite?download=1"
     python examples/tflite_minimal.py
 """

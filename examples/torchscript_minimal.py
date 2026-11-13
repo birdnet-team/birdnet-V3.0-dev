@@ -1,7 +1,7 @@
 """BirdNET+ V3.0 inference with PyTorch (TorchScript), on CPU or GPU.
 
     pip install numpy scipy soundfile torch
-    curl -L -o models/BirdNET+_V3.0_Global_12K_FP32.pt \
+    curl -L --create-dirs -o models/BirdNET+_V3.0_Global_12K_FP32.pt \
       "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_FP32.pt?download=1"
     python examples/torchscript_minimal.py
 """

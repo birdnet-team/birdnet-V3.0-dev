@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v3
+      - run: ruff format --check .
 
   smoke-test:
     runs-on: ubuntu-latest
@@ -35,3 +36,7 @@ jobs:
           grep -q "Poecile atricapillus" results.csv
       - name: Run ONNX example
         run: python examples/onnx_minimal.py
+      - name: Run Geomodel example
+        run: |
+          python examples/geo_species_list.py --lat 42.48 --lon -76.45 --week 20
+          grep -q "Poecile atricapillus" species_list.txt

@@ -24,11 +24,14 @@ args = ap.parse_args()
 
 model = bn.Model()
 start = int(args.query_start * bn.SAMPLE_RATE)
-query = bn.load_audio(args.query)[None, start : start + 3 * bn.SAMPLE_RATE]
+query, _ = bn.chunk(bn.load_audio(args.query)[start : start + 3 * bn.SAMPLE_RATE])  # one 3 s chunk, zero-padded
 _, q = model.predict(query)
 
+files = sorted(p for p in Path(args.folder).rglob("*") if p.suffix.lower() in {".wav", ".flac", ".ogg", ".mp3"})
+if not files:
+    sys.exit(f"No audio files in {args.folder}")
 embs, where = [], []
-for path in sorted(Path(args.folder).rglob("*.wav")):
+for path in files:
     chunks, starts = bn.chunk(bn.load_audio(path), 3.0, overlap=1.5)
     embs.append(model.predict(chunks)[1])
     where += [(path, s) for s in starts]

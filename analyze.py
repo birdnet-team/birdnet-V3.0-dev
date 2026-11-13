@@ -48,6 +48,17 @@ def main() -> None:
     ap.add_argument("--device", choices=["cpu", "cuda"], default="cpu", help="ONNX/TorchScript device")
     args = ap.parse_args()
 
+    missing = [p for p in args.inputs if not Path(p).exists()]
+    if missing:
+        ap.error(f"not found: {', '.join(missing)}")
+    if (args.lat is None) != (args.lon is None):
+        ap.error("--lat and --lon must be given together")
+    if not 0 <= args.week <= 48:
+        ap.error("--week must be between 0 and 48")
+    files = find_audio(args.inputs)
+    if not files:
+        ap.error(f"no audio files ({', '.join(sorted(AUDIO_EXT))}) found")
+
     labels = bn.load_labels(args.labels)
     name_col = f"common_name_{args.lang}" if args.lang != "en" else "common_name"
     if name_col not in labels[0]:
@@ -57,16 +68,22 @@ def main() -> None:
     # Which classes may be reported: species list, taxon groups, and location.
     keep = np.ones(len(labels), dtype=bool)
     if args.species:
-        wanted = {line.strip() for line in open(args.species, encoding="utf-8") if line.strip()}
+        lines = Path(args.species).read_text(encoding="utf-8").splitlines()
+        wanted = {line.strip() for line in lines if line.strip()}
+        unknown = wanted - {r["scientific_name"] for r in labels}
+        if unknown:
+            print(f"Warning: {len(unknown)} names in {args.species} are not in the labels, e.g. {sorted(unknown)[0]}")
         keep &= np.array([r["scientific_name"] in wanted for r in labels])
     if args.groups:
+        all_groups = sorted({r["taxon_group"] for r in labels})
+        if set(args.groups) - set(all_groups):
+            ap.error(f"unknown taxon group in {args.groups}, choose from: {', '.join(all_groups)}")
         keep &= np.array([r["taxon_group"] in args.groups for r in labels])
-    if args.lat is not None and args.lon is not None:
+    if args.lat is not None:
         keep &= bn.GeoModel().mask(labels, args.lat, args.lon, args.week, args.geo_threshold)
     print(f"Reporting {keep.sum():,} of {len(labels):,} classes")
 
     model = bn.Model(args.model, threads=args.threads, device=args.device)
-    files = find_audio(args.inputs)
     all_embs, all_meta, n_rows = [], [], 0
 
     with open(args.output, "w", newline="", encoding="utf-8") as f:
@@ -80,6 +97,8 @@ def main() -> None:
                 continue
             chunks, starts = bn.chunk(audio, args.chunk, args.overlap)
             scores, embs = model.predict(chunks, args.batch_size)
+            if scores.shape[1] != len(labels):
+                ap.error(f"{args.model} has {scores.shape[1]} outputs but {args.labels} has {len(labels)} rows")
             scores[:, ~keep] = 0
             for c, row in enumerate(scores):
                 end = min(starts[c] + args.chunk, len(audio) / bn.SAMPLE_RATE)
@@ -89,8 +108,8 @@ def main() -> None:
                     out.writerow(
                         [
                             path,
-                            f"{starts[c]:.1f}",
-                            f"{end:.1f}",
+                            f"{starts[c]:.2f}",
+                            f"{end:.2f}",
                             r["scientific_name"],
                             r[name_col] or r["common_name"],
                             f"{row[j]:.4f}",
