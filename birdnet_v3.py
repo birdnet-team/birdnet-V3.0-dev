@@ -60,7 +60,7 @@ def load_labels(path: str | Path = DEFAULT_LABELS) -> list[dict[str, str]]:
 
 
 def load_audio(path: str | Path, sr: int = SAMPLE_RATE) -> np.ndarray:
-    """Load an audio file as mono float32 at ``sr`` Hz."""
+    """Load an audio file as float32 at ``sr`` Hz; channels are averaged."""
     audio, file_sr = sf.read(path, dtype="float32", always_2d=True)
     audio = audio.mean(axis=1)
     if file_sr != sr:

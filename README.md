@@ -181,7 +181,8 @@ scores[:, ~mask] = 0
 
 ### Input
 
-- Mono float32 waveform in [-1, 1] at **32 kHz**, shape `[batch, samples]`. The spectrogram is computed inside the model, so you only need to resample audio.
+- Float32 waveform in [-1, 1] at **32 kHz**, shape `[batch, samples]`. The spectrogram is computed inside the model, so you only need to resample audio.
+- Stereo and multichannel recordings work: average the channels (as the scripts here do), or pass each channel as its own row in the batch to analyze the microphones separately.
 - Any length works, but **3 s chunks** match training best. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
 - ONNX and TorchScript accept any batch size. LiteRT models have a fixed batch size of 1: resize the input to `[1, samples]` and loop.
 - Digital silence (all zeros, or any zero-variance input) returns **NaN**. Replace NaN with 0, or skip silent chunks.

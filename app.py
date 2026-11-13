@@ -84,7 +84,7 @@ if use_geo:
 # --- Main ------------------------------------------------------------------------
 st.title("BirdNET+ V3.0")
 st.caption(
-    "11,709 species and 16 non-animal sound classes · 32 kHz mono audio · "
+    "11,709 species and 16 non-animal sound classes · 32 kHz audio · "
     "[Models on Zenodo](https://zenodo.org/records/24162518)"
 )
 

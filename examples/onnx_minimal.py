@@ -15,7 +15,7 @@ MODEL = "models/BirdNET+_V3.0_Global_12K_FP16.onnx"  # downloaded by analyze.py,
 LABELS = "models/BirdNET+_V3.0_Global_12K_Labels.csv"
 
 audio, sr = sf.read("example/soundscape.wav", dtype="float32", always_2d=True)
-audio = resample_poly(audio.mean(axis=1), 32000, sr).astype(np.float32)  # mono, 32 kHz
+audio = resample_poly(audio.mean(axis=1), 32000, sr).astype(np.float32)  # average channels, 32 kHz
 
 # Input: float32 [batch, samples]. Any length works; 3 s chunks match training best.
 x = audio[: 10 * 3 * 32000].reshape(10, -1)  # first 30 s as 10 chunks of 3 s
