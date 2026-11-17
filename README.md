@@ -50,7 +50,7 @@ BirdNET+ V3.0 Global 12K (November 2026) recognizes 9,788 birds, 802 insects, 64
 - Nearly twice as many classes (11,725 vs. 6,522), with many more non-bird species
 - Variable-length input instead of fixed 3 s segments
 - 32 kHz input instead of 48 kHz
-- Improved architecture and training on a much larger, more diverse dataset
+- Improved architecture and training on a much larger, more diverse dataset (see [docs/model.md](docs/model.md))
 
 > **Before you build your own pipeline**, check whether these already do what you need:
 >
@@ -96,6 +96,21 @@ BirdNET+ V3.0 roughly doubles the AP of BirdNET V2.4 and leads in five of seven 
 ![AP against compute on WABAD](docs/figures/wabad_ap_vs_macs.png)
 
 See [docs/wabad.md](docs/wabad.md) for results by region, site, and species, and for how we evaluated.
+
+### Embeddings for other tasks
+
+[probeBench](https://github.com/birdnet-team/probeBench) tests how well the 1280-d embeddings transfer to tasks the model was not trained for. It has 15 tasks from public datasets: marine mammals, bats, insects, individual animals, call types, Arctic soundscapes, and environmental sounds. One logistic-regression probe is fit per task on frozen embeddings, and splits are grouped so that no recording, site, or individual appears in both train and test.
+
+| Model | Mean over 15 tasks |
+|---|---:|
+| Perch 2.0 | 0.787 |
+| AudioProtoPNet-20 | 0.774 |
+| **BirdNET+ V3.0** | **0.757** |
+| BirdNET V2.4 | 0.752 |
+| BirdCODE | 0.728 |
+| Log-mel baseline | 0.615 |
+
+The scores are each task's headline metric (accuracy, macro-F1, mAP, or AUC), where higher is better. All five models are well above the log-mel baseline and within 0.06 of each other. BirdNET+ V3.0 is best on Arctic soundscapes and minke whales. It also does well on gibbons, right whales, and environmental sounds (ESC-50). On bats and on telling individual animals apart, it trails the best model. If you plan to train a small classifier on BirdNET+ V3.0 embeddings for non-bird sounds, the per-task results in probeBench show what to expect.
 
 ## Models
 
@@ -185,7 +200,7 @@ scores[:, ~mask] = 0
 
 - Float32 waveform in [-1, 1] at **32 kHz**, shape `[batch, samples]`. The spectrogram is computed inside the model, so you only need to resample audio.
 - Stereo and multichannel recordings work: average the channels (as the scripts here do), or pass each channel as its own row in the batch to analyze the microphones separately.
-- Any length works, but **3 s chunks** match training best. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
+- Any length works, but **about 2–12 s** matches training best. The scripts here use 3 s chunks. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
 - ONNX and TorchScript accept any batch size. LiteRT models have a fixed batch size of 1: resize the input to `[1, samples]` and loop.
 - The TF SavedModel (`_FP32_Protobuf.zip`) only accepts `[1, 96000]` (one 3 s chunk), although its signature shows `(1, None)`. Loop over chunks, or use ONNX or TorchScript for other lengths and batch sizes.
 - Digital silence (all zeros, or any zero-variance input) returns **NaN**. Replace NaN with 0, or skip silent chunks.
@@ -224,6 +239,7 @@ scores[:, ~mask] = 0
 
 ### Going further
 
+- Architecture, spectrogram settings, and training: [docs/model.md](docs/model.md).
 - Custom species subsets, other precisions, or other formats: [model-converter](https://github.com/birdnet-team/model-converter).
 - Microcontrollers: [birdnet-stm32](https://github.com/birdnet-team/birdnet-stm32) has a tiny model for the STM32N6 NPU.
 
@@ -238,6 +254,7 @@ scores[:, ~mask] = 0
 | [BirdBox](https://github.com/birdnet-team/BirdBox) | Bird call detection in time and frequency with an object detection model ([demo](https://birdnet-team.github.io/BirdBox/demo/)) |
 | [model-converter](https://github.com/birdnet-team/model-converter) | Converts BirdNET+ V3.0 PyTorch models to ONNX, LiteRT, TorchScript, and Core ML |
 | [birdnet-stm32](https://github.com/birdnet-team/birdnet-stm32) | Tiny acoustic model for the STM32N6 microcontroller |
+| [probeBench](https://github.com/birdnet-team/probeBench) | Linear-probe benchmark for bioacoustic audio embeddings on 15 tasks, from whales and bats to insects and individual animals |
 | [birdnetR](https://github.com/birdnet-team/birdnetR) | R wrapper for the birdnet Python package |
 
 ## Repository layout
@@ -248,6 +265,7 @@ analyze.py        Command-line batch analysis
 app.py            Streamlit demo
 examples/         Short standalone scripts
 examples/audio/   Example soundscape (2 min)
+docs/model.md     Model architecture and training
 docs/wabad.md     WABAD benchmark results
 ```
 
