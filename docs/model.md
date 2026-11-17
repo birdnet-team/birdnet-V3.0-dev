@@ -12,7 +12,7 @@ This page describes how BirdNET+ V3.0 Global 12K is built and trained. For how t
 | Input | 32 kHz waveform, shape `[batch, samples]`, any length (about 2–12 s matches training best). Stereo works as a batch of two. |
 | Spectrogram | 128-band log-mel, 2,048-point FFT, 512-sample hop, resized to 224 pixels high |
 | Outputs | 11,725 class scores and a 1280-d embedding |
-| Training data | Macaulay Library, iNaturalist, Xeno-canto, Animal Sound Archive Berlin, Observation.org, and non-public collections |
+| Training data | About 58,000 hours from Macaulay Library, iNaturalist, Xeno-canto, Animal Sound Archive Berlin, Observation.org, and non-public collections ([per class](#how-much-audio-per-class)) |
 | Compute | 1.38 GMAC per second of audio |
 | Optimizer | Adam, learning rate 0.001, cosine schedule with warmup |
 | Batch size / epochs | 42 / 40 |
@@ -70,6 +70,24 @@ Training data also included non-public collections, such as validated snippets f
 ### Classes
 
 The model was trained on 16,852 classes. For the release, the outputs were reduced to 11,725 classes: 11,709 animal species and 16 non-animal classes. The unpruned model with all training classes is in `_Source_Checkpoint.zip` on [Zenodo](https://zenodo.org/records/24162518).
+
+### How much audio per class
+
+The 11,725 released classes were trained on about 58,000 hours of audio, but not evenly. A few well-recorded species have hundreds of hours. Half of all classes have less than an hour, and the rarest have less than a minute.
+
+![Training audio per class, ranked from most to least](figures/training_audio_per_class.png)
+
+| Group | Classes | Training audio | Median per class | Most data |
+| --- | ---: | ---: | ---: | --- |
+| Birds | 9,788 | 55,200 h | 68 min | Common Blackbird (471 h) |
+| Insects | 802 | 860 h | 21 min | Great Green Bush-cricket (30 h) |
+| Amphibians | 649 | 970 h | 20 min | Spring Peeper (77 h) |
+| Mammals | 419 | 960 h | 24 min | Humpback Whale (152 h) |
+| Other animals (fish, reptiles, spiders) | 51 | 140 h | 12 min | Plainfin Midshipman (107 h) |
+| Non-animal sounds | 16 | 90 h | 2.3 h | Music (58 h) |
+| **All** | **11,725** | **58,200 h** | **57 min** | |
+
+Durations are estimates. Expect less reliable scores for classes with only a few minutes of training audio, and check their detections more carefully.
 
 ### Optimization
 
