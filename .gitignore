@@ -1,4 +1,4 @@
-# Model files (downloaded from Zenodo / GitHub releases)
+# Model files (downloaded from Zenodo)
 models/
 *.onnx
 *.tflite

@@ -116,7 +116,7 @@ The scores are each task's headline metric (accuracy, macro-F1, mAP, or AUC), wh
 
 Download from [Zenodo](https://zenodo.org/records/24362980) (DOI [10.5281/zenodo.24362980](https://doi.org/10.5281/zenodo.24362980)). The record also holds the [Geomodel, the Taxonomy, and the BirdNET Live models](#other-files-in-the-record).
 
-**Version 3.0.1 (November 19, 2026)** replaces the first release (3.0.0). Weights, classes, and labels are unchanged; all models were exported again with conversion fixes:
+**Version 3.0.1 (November 19, 2026)** replaces the first release (3.0, November 13, 2026). Weights, classes, and labels are unchanged; all models were exported again with conversion fixes:
 
 - Silent (all-zero) input no longer returns NaN in the ONNX and FP16 LiteRT models.
 - The FP16 ONNX models are mixed precision: same size, closer to the FP32 scores, and safe from float16 overflow on GPUs and mobile devices.
@@ -124,11 +124,11 @@ Download from [Zenodo](https://zenodo.org/records/24362980) (DOI [10.5281/zenodo
 - The spectrogram is computed without the STFT operator, so more runtimes can run the models.
 - The TF SavedModel raises an error for input shapes other than `[1, 96000]`.
 
-If you downloaded models before this date, delete the `BirdNET+_V3.0_Global_12K_*` files in `models/` so the scripts fetch them again. The file names did not change, so existing files are not replaced.
+If you downloaded models before November 19, 2026, delete the `BirdNET+_V3.0_Global_12K_*` files in `models/` so the scripts fetch them again. The file names did not change, so existing files are not replaced. To check a file, compare its MD5 checksum with the one on the Zenodo page. The `BirdNET+_Geomodel_V3.0.4_*` files are no longer used and can be deleted too.
 
 ### Audio model
 
-All files start with `BirdNET+_V3.0_Global_12K_` and share one label file.
+All files start with `BirdNET+_V3.0_Global_12K_` and share one labels file.
 
 | File suffix | Format | Size | Use it for |
 |---|---|---:|---|
@@ -148,12 +148,12 @@ The scripts in this repository download the FP16 ONNX model and labels to `model
 
 | File | Size | Contents |
 |---|---:|---|
-| `BirdNET+_Geomodel_V3.0.5_Global_14K.zip` | 111 MB | [Geomodel](https://github.com/birdnet-team/geomodel): occurrence probability per species for a latitude, longitude, and week (1–48). TorchScript, ONNX, LiteRT, TF SavedModel, and Core ML, plus labels |
+| `BirdNET+_Geomodel_V3.0.5_Global_14K.zip` | 111 MB | [Geomodel](https://github.com/birdnet-team/geomodel): occurrence probability per species for a latitude, longitude, and week (1–48). TorchScript, ONNX, LiteRT, TF SavedModel, Core ML, and the PyTorch checkpoint, plus labels |
 | `BirdNET+_Taxonomy_v0.5-Nov2026.zip` | 70 MB | [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) as CSV and JSON: 18,093 records with BirdNET IDs, names in 36 languages, and iNaturalist, eBird, and GBIF IDs |
 | `BirdNET+_V3.0_Global_10K_BNL.zip` | 70 MB | The two models the [BirdNET Live](https://github.com/birdnet-team/birdnet-live-app) app runs on-device, with one shared labels file and a README |
 
-- **Geomodel V3.0.5** has the trained weights of Geomodel V3.0.4. Its 14,057 classes are the ones in the BirdNET+ Taxonomy, and its labels carry BirdNET IDs, so its output joins to the audio model's labels on `birdnet_id`. The TorchScript geomodel returns logits (apply a sigmoid); the other formats return probabilities.
-- **BirdNET Live models** are both FP16 ONNX: an audio model with 10,064 classes (68 MB, one classifier head, like `_FP16_pruned.onnx`) and a geomodel for the same 10,048 species (7 MB). The audio model keeps a species only if the geomodel can predict it somewhere in the world. The labels file has a `geo_ix` column with each species' index in the geomodel output. Use them when you want one small, matched pair of models; the README in the zip has a code example.
+- **Geomodel V3.0.5** has the trained weights of Geomodel V3.0.4. Its classes were reduced to the 14,057 that are in the BirdNET+ Taxonomy, and its labels carry BirdNET IDs, so its output joins to the audio model's labels on `birdnet_id`. The TorchScript Geomodel returns logits (apply a sigmoid); the other formats return probabilities.
+- **BirdNET Live models** are both FP16 ONNX: an audio model with 10,064 classes (68 MB, one classifier head, like `_FP16_pruned.onnx`) and a Geomodel for the same 10,048 species (7 MB). The audio model keeps a species only if the Geomodel can predict it somewhere in the world. The labels file has a `geo_ix` column with each species' index in the Geomodel output. Use them when you want one small, matched pair of models; the README in the zip has a code example.
 
 ## Usage
 
@@ -228,7 +228,7 @@ scores[:, ~mask] = 0
 - Any length works, but **about 2–12 s** matches training best. The scripts here use 3 s chunks. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
 - ONNX and TorchScript accept any batch size. LiteRT models have a fixed batch size of 1: resize the input to `[1, samples]` and loop.
 - The TF SavedModel (`_FP32_Protobuf.zip`) only accepts `[1, 96000]` (one 3 s chunk) and raises an error for other shapes. Loop over chunks, or use ONNX or TorchScript for other lengths and batch sizes.
-- Digital silence (all zeros, or any constant input) is fine: the models return low scores. ONNX and FP16 LiteRT files from before release 3.0.1 returned NaN instead.
+- Digital silence (all zeros) no longer returns NaN; ONNX and FP16 LiteRT files from before release 3.0.1 did. The full models score at most 0.04 on silence, but the pruned models reach about 0.25, so skip silent chunks or use a threshold above 0.25 with them.
 - Zero-pad the last chunk of a file to the full chunk length.
 
 ### Output
@@ -241,18 +241,18 @@ scores[:, ~mask] = 0
 ### Labels
 
 - `BirdNET+_V3.0_Global_12K_Labels.csv` is comma-separated, one row per model output, in output order (`ix`).
-- Columns: `birdnet_id` (stable BirdNET+ Taxonomy ID, e.g. `BN00001`), `scientific_name`, `common_name`, `taxon_group` (`Aves`, `Insecta`, `Amphibia`, `Mammalia`, `Actinopterygii`, `Reptilia`, `Arachnida`, `Anthropogenic`, `Geophony`, `Music`), `inat_id`, `ebird_code`, and `common_name_<lang>` for 36 languages. Fall back to `common_name` when a translation is empty.
+- Columns: `birdnet_id` (stable BirdNET+ Taxonomy ID, e.g. `BN00001`; the Geomodel filter joins on it), `scientific_name`, `common_name`, `taxon_group` (`Aves`, `Insecta`, `Amphibia`, `Mammalia`, `Actinopterygii`, `Reptilia`, `Arachnida`, `Anthropogenic`, `Geophony`, `Music`), `inat_id`, `ebird_code`, and `common_name_<lang>` for 36 languages. Fall back to `common_name` when a translation is empty.
 - Look up more species metadata (descriptions, images, aliases) in the [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/).
 
 ### Precision and size
 
 - FP16 is half the size of FP32 with minimal accuracy loss. On the example soundscape, the largest score difference from FP32 TorchScript was 0.005 for both FP16 ONNX and FP16 LiteRT.
 - The pruned models keep one of the three classifier heads. They are less than half the size, and scores differ by up to about 0.14 from the full model. Use them where size matters more than the last bit of accuracy.
-- The FP16 ONNX model analyzes 2 minutes of audio in about 2.5 s on an 8-thread desktop CPU.
+- The FP16 ONNX model analyzes 2 minutes of audio in about 2.5 s on a desktop CPU with `--threads 8`.
 
 ### GPU
 
-- **NVIDIA GPUs: TorchScript is the tested path.** On a TITAN RTX, FP32 TorchScript analyzes a batch of 128 × 3 s in about 0.5 s. Load the model with `torch.jit.load(path, map_location="cuda")`, as the scripts here do.
+- **NVIDIA GPUs: TorchScript is the tested path.** On a TITAN RTX, FP32 TorchScript analyzes a batch of 128 × 3 s in about 0.7 s, including the copy to the GPU. Load the model with `torch.jit.load(path, map_location="cuda")`, as the scripts here do.
 - The ONNX models no longer contain the STFT operator, which has no CUDA kernel in ONNX Runtime and kept the spectrogram on the CPU in the first release. We have not benchmarked the 3.0.1 ONNX models on a GPU yet.
 
 ### Practical tips

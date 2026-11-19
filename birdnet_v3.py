@@ -45,7 +45,11 @@ def ensure_file(path: str | Path) -> Path:
     tmp = path.with_suffix(path.suffix + ".part")
     if name.startswith(GEO_NAME) and name != GEO_ZIP:
         with zipfile.ZipFile(ensure_file(path.parent / GEO_ZIP)) as z:
-            tmp.write_bytes(z.read(f"{GEO_NAME}/{name}"))
+            try:
+                data = z.read(f"{GEO_NAME}/{name}")
+            except KeyError:
+                raise FileNotFoundError(path) from None
+        tmp.write_bytes(data)
         tmp.replace(path)
         return path
     if not name.startswith(MODEL_NAME) and name != GEO_ZIP:
@@ -210,5 +214,7 @@ class GeoModel:
 
         Classes the geomodel does not cover (e.g., non-animal sounds) stay True.
         """
+        if labels and "birdnet_id" not in labels[0]:
+            raise ValueError("The geomodel filter needs labels with a 'birdnet_id' column")
         probs = self.predict(lat, lon, week)
         return np.array([probs.get(r["birdnet_id"], 1.0) >= threshold for r in labels])
