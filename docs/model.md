@@ -33,7 +33,7 @@ Because the spectrogram is part of the model, you never need to reproduce this p
 
 ### Backbone
 
-An EfficientNetV2-S encoder, initialized from ImageNet-21k weights, turns the spectrogram into a feature map with 1,280 channels over a coarse grid of frequency and time. The embedding output (`embeddings_out`, 1280-d) comes from this feature map.
+An EfficientNetV2-S encoder, initialized from ImageNet-21k weights, turns the spectrogram into a feature map with 1,280 channels over a coarse grid of frequency and time. The embedding output (`embeddings`, 1280-d) comes from this feature map.
 
 ### Three classifier heads
 
@@ -69,7 +69,7 @@ Training data also included non-public collections, such as validated snippets f
 
 ### Classes
 
-The model was trained on 16,852 classes. For the release, the outputs were reduced to 11,725 classes: 11,709 animal species and 16 non-animal classes. The unpruned model with all training classes is in `_Source_Checkpoint.zip` on [Zenodo](https://zenodo.org/records/24162518).
+The model was trained on 16,852 classes. For the release, the outputs were reduced to 11,725 classes: 11,709 animal species and 16 non-animal classes. The unpruned model with all training classes is in `_Source_Checkpoint.zip` on [Zenodo](https://zenodo.org/records/24362980).
 
 ### How much audio per class
 

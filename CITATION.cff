@@ -26,18 +26,18 @@ abstract: >-
   sound classes in 32 kHz audio. Models are released in TorchScript, ONNX,
   LiteRT (TFLite), TensorFlow SavedModel, and Core ML formats. This repository
   provides reference code, examples, and benchmark results.
-version: "3.0"
-date-released: "2026-11-13"
-doi: 10.5281/zenodo.24162518
+version: "3.0.1"
+date-released: "2026-11-19"
+doi: 10.5281/zenodo.24362980
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.24162518
+    value: 10.5281/zenodo.24362980
     description: BirdNET+ V3.0 model files (this version)
   - type: doi
     value: 10.5281/zenodo.17571189
     description: BirdNET+ V3.0 model files (all versions)
 repository-code: "https://github.com/birdnet-team/birdnet-V3.0-dev"
-url: "https://zenodo.org/records/24162518"
+url: "https://zenodo.org/records/24362980"
 license:
   - MIT
   - Apache-2.0

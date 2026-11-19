@@ -2,9 +2,9 @@
 
     pip install numpy scipy soundfile onnxruntime
     curl -L --create-dirs -o models/BirdNET+_V3.0_Global_12K_FP16.onnx \
-      "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_FP16.onnx?download=1"
+      "https://zenodo.org/records/24362980/files/BirdNET+_V3.0_Global_12K_FP16.onnx?download=1"
     curl -L --create-dirs -o models/BirdNET+_V3.0_Global_12K_Labels.csv \
-      "https://zenodo.org/records/24162518/files/BirdNET+_V3.0_Global_12K_Labels.csv?download=1"
+      "https://zenodo.org/records/24362980/files/BirdNET+_V3.0_Global_12K_Labels.csv?download=1"
     python examples/onnx_minimal.py
 
 (``python analyze.py examples/audio/soundscape.wav`` also downloads both files.)
@@ -27,7 +27,7 @@ audio = resample_poly(audio.mean(axis=1), 32000, sr).astype(np.float32)  # avera
 x = audio[: 10 * 3 * 32000].reshape(10, -1)  # first 30 s as 10 chunks of 3 s
 
 session = ort.InferenceSession(MODEL, providers=["CPUExecutionProvider"])  # or CUDAExecutionProvider
-scores, embeddings = session.run(["predictions", "embeddings_out"], {"input": x})
+scores, embeddings = session.run(["predictions", "embeddings"], {"input": x})
 # scores: [10, 11725], independent per class (0-1); embeddings: [10, 1280]
 
 names = [row["common_name"] for row in csv.DictReader(open(LABELS, encoding="utf-8"))]

@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models
-          key: models-v3.0-geo-v3.0.4
+          key: models-v3.0.1-geo-v3.0.5
       - name: Analyze example (FP16 ONNX + Geomodel)
         run: |
           python analyze.py examples/audio/soundscape.wav --lat 42.48 --lon -76.45 --week 20 -o results.csv
