@@ -2,8 +2,8 @@
 
 Copyright (c) 2026 The BirdNET Team
 
-This license covers the trained BirdNET+ V3.0 model weights in all released
-formats: TorchScript, ONNX, LiteRT (TFLite), TensorFlow SavedModel, and Core ML,
+This license covers the trained BirdNET+ V3.0 audio model and BirdNET+ Geomodel
+weights in all released formats: TorchScript, ONNX, LiteRT (TFLite), TensorFlow SavedModel, and Core ML,
 including reduced-precision and pruned variants, the source checkpoint, and the
 label files.
 

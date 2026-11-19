@@ -4,7 +4,7 @@
 
 BirdNET is an open scientific project developed to support biodiversity research, wildlife conservation, environmental education, and citizen science.
 
-This policy applies to the BirdNET V3.0 models — the trained model weights and any converted or quantized versions of them, such as TensorFlow/LiteRT, TorchScript, and ONNX exports.
+This policy applies to the BirdNET V3.0 models — the trained model weights and any converted or quantized versions of them, such as TensorFlow/LiteRT, TorchScript, ONNX, and Core ML exports. It applies in the same way to the BirdNET+ Geomodel distributed with this project, which predicts where and when species occur, and to its converted versions.
 
 We encourage broad adoption of the BirdNET V3.0 models for lawful and responsible purposes that contribute to the understanding and protection of nature.
 

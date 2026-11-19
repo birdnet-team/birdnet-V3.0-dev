@@ -29,7 +29,7 @@ if name not in labels[0]:
 
 probs = bn.GeoModel().predict(args.lat, args.lon, args.week)
 hits = sorted(
-    ((probs[r["scientific_name"]], r) for r in labels if probs.get(r["scientific_name"], 0) >= args.threshold),
+    ((probs[r["birdnet_id"]], r) for r in labels if probs.get(r["birdnet_id"], 0) >= args.threshold),
     key=lambda h: -h[0],
 )
 

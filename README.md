@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="MODEL_LICENSE.md"><img src="https://img.shields.io/badge/model%20license-Apache--2.0-blue.svg" alt="Model license: Apache 2.0"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="https://doi.org/10.5281/zenodo.24162518"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.24162518.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.24362980"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.24362980.svg" alt="DOI"></a>
   <img src="https://img.shields.io/badge/model-V3.0-green.svg" alt="BirdNET+ V3.0">
   <img src="https://img.shields.io/badge/species-11%2C709-yellow.svg" alt="11,709 animal species">
 </p>
@@ -114,21 +114,46 @@ The scores are each task's headline metric (accuracy, macro-F1, mAP, or AUC), wh
 
 ## Models
 
-Download from [Zenodo](https://zenodo.org/records/24162518) (DOI [10.5281/zenodo.24162518](https://doi.org/10.5281/zenodo.24162518)). All files start with `BirdNET+_V3.0_Global_12K_` and share one label file.
+Download from [Zenodo](https://zenodo.org/records/24362980) (DOI [10.5281/zenodo.24362980](https://doi.org/10.5281/zenodo.24362980)). The record also holds the [Geomodel, the Taxonomy, and the BirdNET Live models](#other-files-in-the-record).
+
+**Version 3.0.1 (November 19, 2026)** replaces the first release (3.0, November 13, 2026). Weights, classes, and labels are unchanged; all models were exported again with conversion fixes:
+
+- Silent (all-zero) input no longer returns NaN in the ONNX and FP16 LiteRT models.
+- The FP16 ONNX models are mixed precision: same size, closer to the FP32 scores, and safe from float16 overflow on GPUs and mobile devices.
+- The second output of the FP16 ONNX models is named `embeddings` (was `embeddings_out`), as in the FP32 model.
+- The spectrogram is computed without the STFT operator, so more runtimes can run the models.
+- The TF SavedModel raises an error for input shapes other than `[1, 96000]`.
+
+If you downloaded models before November 19, 2026, delete the `BirdNET+_V3.0_Global_12K_*` files in `models/` so the scripts fetch them again. The file names did not change, so existing files are not replaced. To check a file, compare its MD5 checksum with the one on the Zenodo page. The `BirdNET+_Geomodel_V3.0.4_*` files are no longer used and can be deleted too.
+
+### Audio model
+
+All files start with `BirdNET+_V3.0_Global_12K_` and share one labels file.
 
 | File suffix | Format | Size | Use it for |
 |---|---|---:|---|
-| `_FP16.onnx` | ONNX | 173 MB | **Default.** Desktop and server, CPU or GPU, any language with ONNX Runtime |
+| `_FP16.onnx` | ONNX | 174 MB | **Default.** Desktop and server, CPU or GPU, any language with ONNX Runtime |
 | `_FP32.onnx` | ONNX | 345 MB | Reference precision |
 | `_FP32.pt` | TorchScript | 345 MB | PyTorch, GPU batch processing, fine-tuning experiments |
 | `_FP16.tflite` / `_FP32.tflite` | LiteRT (TFLite) | 172 / 344 MB | Android, Raspberry Pi, embedded Linux |
 | `_FP16_pruned.onnx` / `_FP16_pruned.tflite` | ONNX / LiteRT | 72 / 71 MB | Mobile and edge devices (one of three classifier heads) |
-| `_FP16.mlpackage.zip` / `_FP32.mlpackage.zip` | Core ML | 172 / 332 MB | iOS 16+ and macOS 13+ |
-| `_FP32_Protobuf.zip` | TF SavedModel | 318 MB | TensorFlow serving |
+| `_FP16.mlpackage.zip` / `_FP32.mlpackage.zip` | Core ML | 157 / 317 MB | iOS 16+ and macOS 13+ |
+| `_FP32_Protobuf.zip` | TF SavedModel | 317 MB | TensorFlow serving |
 | `_Labels.csv` / `_Labels.xlsx` | CSV / Excel | 8 / 5 MB | One row per model output, same order for all models |
-| `_Source_Checkpoint.zip` | TorchScript + ONNX | 838 MB | Research: unpruned model with all 16,852 training classes |
+| `_Source_Checkpoint.zip` | TorchScript + ONNX | 837 MB | Research: unpruned model with all 16,852 training classes |
 
-The scripts in this repository download the FP16 ONNX model and labels to `models/` next to `birdnet_v3.py` on first use (set `BIRDNET_MODEL_DIR` to change the location).
+The scripts in this repository download the FP16 ONNX model and labels to `models/` next to `birdnet_v3.py` on first use (set `BIRDNET_MODEL_DIR` to change the location). The Geomodel zip is downloaded the first time you filter by location.
+
+### Other files in the record
+
+| File | Size | Contents |
+|---|---:|---|
+| `BirdNET+_Geomodel_V3.0.5_Global_14K.zip` | 111 MB | [Geomodel](https://github.com/birdnet-team/geomodel): occurrence probability per species for a latitude, longitude, and week (1–48). TorchScript, ONNX, LiteRT, TF SavedModel, Core ML, and the PyTorch checkpoint, plus labels |
+| `BirdNET+_Taxonomy_v0.5-Nov2026.zip` | 70 MB | [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/) as CSV and JSON: 18,093 records with BirdNET IDs, names in 36 languages, and iNaturalist, eBird, and GBIF IDs |
+| `BirdNET+_V3.0_Global_10K_BNL.zip` | 70 MB | The two models the [BirdNET Live](https://github.com/birdnet-team/birdnet-live-app) app runs on-device, with one shared labels file and a README |
+
+- **Geomodel V3.0.5** has the trained weights of Geomodel V3.0.4. Its classes were reduced to the 14,057 that are in the BirdNET+ Taxonomy, and its labels carry BirdNET IDs, so its output joins to the audio model's labels on `birdnet_id`. The TorchScript Geomodel returns logits (apply a sigmoid); the other formats return probabilities.
+- **BirdNET Live models** are both FP16 ONNX: an audio model with 10,064 classes (68 MB, one classifier head, like `_FP16_pruned.onnx`) and a Geomodel for the same 10,048 species (7 MB). The audio model keeps a species only if the Geomodel can predict it somewhere in the world. The labels file has a `geo_ix` column with each species' index in the Geomodel output. Use them when you want one small, matched pair of models; the README in the zip has a code example.
 
 ## Usage
 
@@ -202,13 +227,13 @@ scores[:, ~mask] = 0
 - Stereo and multichannel recordings work: average the channels (as the scripts here do), or pass each channel as its own row in the batch to analyze the microphones separately.
 - Any length works, but **about 2–12 s** matches training best. The scripts here use 3 s chunks. LiteRT models are most accurate at 3 s and drift slightly on other lengths; Core ML models take exactly 3 s.
 - ONNX and TorchScript accept any batch size. LiteRT models have a fixed batch size of 1: resize the input to `[1, samples]` and loop.
-- The TF SavedModel (`_FP32_Protobuf.zip`) only accepts `[1, 96000]` (one 3 s chunk), although its signature shows `(1, None)`. Loop over chunks, or use ONNX or TorchScript for other lengths and batch sizes.
-- Digital silence (all zeros, or any zero-variance input) returns **NaN**. Replace NaN with 0, or skip silent chunks.
+- The TF SavedModel (`_FP32_Protobuf.zip`) only accepts `[1, 96000]` (one 3 s chunk) and raises an error for other shapes. Loop over chunks, or use ONNX or TorchScript for other lengths and batch sizes.
+- Digital silence (all zeros) no longer returns NaN; ONNX and FP16 LiteRT files from before release 3.0.1 did. The full models score at most 0.04 on silence, but the pruned models reach about 0.25, so skip silent chunks or use a threshold above 0.25 with them.
 - Zero-pad the last chunk of a file to the full chunk length.
 
 ### Output
 
-- Two outputs: `predictions` (scores, one per class) and `embeddings_out` (1280-d). In LiteRT, the output names are generic; tell them apart by size.
+- Two outputs: `predictions` (scores, one per class) and `embeddings` (1280-d). In LiteRT, the output names are generic; tell them apart by size.
 - Scores are independent per class (0–1, multi-label), not a softmax: several species can score high in the same chunk, and scores do not sum to 1.
 - Scores are not calibrated probabilities. 0.25 is a reasonable starting threshold. On WABAD, 65% of annotated calls had a window scoring 0.25 or higher for the right species, and 54% scored 0.5 or higher. Some species rank well but score low, so species-specific thresholds help.
 - Embeddings are useful for similarity search, clustering, and training small classifiers for sounds or call types the model does not know.
@@ -216,23 +241,23 @@ scores[:, ~mask] = 0
 ### Labels
 
 - `BirdNET+_V3.0_Global_12K_Labels.csv` is comma-separated, one row per model output, in output order (`ix`).
-- Columns: `birdnet_id` (stable BirdNET+ Taxonomy ID, e.g. `BN00001`), `scientific_name`, `common_name`, `taxon_group` (`Aves`, `Insecta`, `Amphibia`, `Mammalia`, `Actinopterygii`, `Reptilia`, `Arachnida`, `Anthropogenic`, `Geophony`, `Music`), `inat_id`, `ebird_code`, and `common_name_<lang>` for 36 languages. Fall back to `common_name` when a translation is empty.
+- Columns: `birdnet_id` (stable BirdNET+ Taxonomy ID, e.g. `BN00001`; the Geomodel filter joins on it), `scientific_name`, `common_name`, `taxon_group` (`Aves`, `Insecta`, `Amphibia`, `Mammalia`, `Actinopterygii`, `Reptilia`, `Arachnida`, `Anthropogenic`, `Geophony`, `Music`), `inat_id`, `ebird_code`, and `common_name_<lang>` for 36 languages. Fall back to `common_name` when a translation is empty.
 - Look up more species metadata (descriptions, images, aliases) in the [BirdNET+ Taxonomy](https://birdnet.cornell.edu/taxonomy/).
 
 ### Precision and size
 
-- FP16 is half the size of FP32 with minimal accuracy loss. On the example soundscape, the largest score difference from FP32 TorchScript was 0.019 (FP16 ONNX) and 0.005 (FP16 LiteRT).
+- FP16 is half the size of FP32 with minimal accuracy loss. On the example soundscape, the largest score difference from FP32 TorchScript was 0.005 for both FP16 ONNX and FP16 LiteRT.
 - The pruned models keep one of the three classifier heads. They are less than half the size, and scores differ by up to about 0.14 from the full model. Use them where size matters more than the last bit of accuracy.
-- The FP16 ONNX model analyzes 2 minutes of audio in about 2.5 s on an 8-thread desktop CPU.
+- The FP16 ONNX model analyzes 2 minutes of audio in about 2.5 s on a desktop CPU with `--threads 8`.
 
 ### GPU
 
-- **NVIDIA GPUs: use TorchScript for the highest throughput.** ONNX Runtime has no CUDA kernel for the STFT op, so the spectrogram runs on the CPU even with the CUDA provider. On a TITAN RTX (batch of 128 × 3 s), FP32 TorchScript takes 0.7 s and FP16 ONNX takes 1.75 s, three quarters of which is the STFT.
-- Load TorchScript models directly onto the device with `torch.jit.load(path, map_location="cuda")`, as the scripts here do. Calling `model.to("cuda")` after loading leaves the mel filterbank on the CPU and fails with a device mismatch.
+- **NVIDIA GPUs: TorchScript is the tested path.** On a TITAN RTX, FP32 TorchScript analyzes a batch of 128 × 3 s in about 0.7 s, including the copy to the GPU. Load the model with `torch.jit.load(path, map_location="cuda")`, as the scripts here do.
+- The ONNX models no longer contain the STFT operator, which has no CUDA kernel in ONNX Runtime and kept the spectrogram on the CPU in the first release. We have not benchmarked the 3.0.1 ONNX models on a GPU yet.
 
 ### Practical tips
 
-- **Filter by location.** The [Geomodel](https://github.com/birdnet-team/geomodel) removes species that are unlikely at a given place and time, a simple way to reduce false positives. It covers 10,874 of the 11,725 classes; uncovered classes (including all non-animal classes) are never filtered.
+- **Filter by location.** The [Geomodel](https://github.com/birdnet-team/geomodel) removes species that are unlikely at a given place and time, a simple way to reduce false positives. It covers 10,926 of the 11,725 classes; uncovered classes (including all non-animal classes) are never filtered.
 - **Overlap chunks** (e.g., `--overlap 1.5`) to catch calls that straddle chunk boundaries, at the cost of more compute.
 - **Pool over time** for presence/absence per file or day: the maximum score per species over all chunks is a simple, effective summary.
 - **Report the model file and precision** with your results so they stay reproducible.
@@ -249,8 +274,9 @@ scores[:, ~mask] = 0
 |---|---|
 | [birdnet](https://github.com/birdnet-team/birdnet) | Python package: `pip install birdnet`, then `birdnet.load("acoustic", "3.0", "onnx").predict("audio.wav")` |
 | [BirdNET-Analyzer](https://github.com/birdnet-team/BirdNET-Analyzer) | GUI and CLI for batch analysis, review, and custom classifier training |
-| [Geomodel](https://github.com/birdnet-team/geomodel) | Species occurrence by location and week (14,082 species) to filter detections |
+| [Geomodel](https://github.com/birdnet-team/geomodel) | Species occurrence by location and week (14,057 species in V3.0.5) to filter detections |
 | [BirdNET+ Taxonomy](https://github.com/birdnet-team/birdnet-taxonomy) | Species IDs, localized names, and metadata ([browse](https://birdnet.cornell.edu/taxonomy/)) |
+| [BirdNET Live](https://github.com/birdnet-team/birdnet-live-app) | Mobile app that runs BirdNET+ V3.0 on-device |
 | [BirdBox](https://github.com/birdnet-team/BirdBox) | Bird call detection in time and frequency with an object detection model ([demo](https://birdnet-team.github.io/BirdBox/demo/)) |
 | [model-converter](https://github.com/birdnet-team/model-converter) | Converts BirdNET+ V3.0 PyTorch models to ONNX, LiteRT, TorchScript, and Core ML |
 | [birdnet-stm32](https://github.com/birdnet-team/birdnet-stm32) | Tiny acoustic model for the STM32N6 microcontroller |
@@ -287,17 +313,17 @@ BirdNET is built to support biodiversity research and conservation. See [ACCEPTA
 
 If you use BirdNET+ V3.0, please cite the model release:
 
-Lasseck, M., Eibl, M., Klinck, H., & Kahl, S. (2026). BirdNET+ V3.0 model files (Version 3.0). Zenodo. https://doi.org/10.5281/zenodo.24162518
+Lasseck, M., Eibl, M., Klinck, H., & Kahl, S. (2026). BirdNET+ V3.0 model files (Version 3.0.1). Zenodo. https://doi.org/10.5281/zenodo.24362980
 
 ```bibtex
 @misc{lasseck2026birdnet,
   title     = {{BirdNET+ V3.0} model files},
   author    = {Lasseck, Mario and Eibl, Maximilian and Klinck, Holger and Kahl, Stefan},
   year      = {2026},
-  version   = {3.0},
+  version   = {3.0.1},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.24162518},
-  url       = {https://doi.org/10.5281/zenodo.24162518}
+  doi       = {10.5281/zenodo.24362980},
+  url       = {https://doi.org/10.5281/zenodo.24362980}
 }
 ```
 

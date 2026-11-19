@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import os
 import urllib.request
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -22,16 +23,17 @@ SAMPLE_RATE = 32000
 EMBEDDING_DIM = 1280
 
 MODEL_NAME = "BirdNET+_V3.0_Global_12K"
-MODEL_URL = "https://zenodo.org/records/24162518/files/{}?download=1"
+MODEL_URL = "https://zenodo.org/records/24362980/files/{}?download=1"
 # Next to this file by default, so scripts find the models from any working directory.
 MODEL_DIR = Path(os.environ.get("BIRDNET_MODEL_DIR", Path(__file__).resolve().parent / "models"))
 DEFAULT_MODEL = MODEL_DIR / f"{MODEL_NAME}_FP16.onnx"
 DEFAULT_LABELS = MODEL_DIR / f"{MODEL_NAME}_Labels.csv"
 
-GEO_NAME = "BirdNET+_Geomodel_V3.0.4_Global_14K"
-GEO_URL = "https://github.com/birdnet-team/geomodel/releases/download/v3.0.4/{}"
+# The geomodel is one zip in the same Zenodo record; single files are extracted from it.
+GEO_NAME = "BirdNET+_Geomodel_V3.0.5_Global_14K"
+GEO_ZIP = f"{GEO_NAME}.zip"
 DEFAULT_GEO_MODEL = MODEL_DIR / f"{GEO_NAME}_FP16.onnx"
-DEFAULT_GEO_LABELS = MODEL_DIR / f"{GEO_NAME}_Labels.txt"
+DEFAULT_GEO_LABELS = MODEL_DIR / f"{GEO_NAME}_Labels.csv"
 
 
 def ensure_file(path: str | Path) -> Path:
@@ -40,17 +42,22 @@ def ensure_file(path: str | Path) -> Path:
     if path.is_file():
         return path
     name = path.name
-    if name.startswith(MODEL_NAME):
-        url = MODEL_URL.format(name)
-    elif name.startswith(GEO_NAME):
-        url = GEO_URL.format(name.replace("+", "%2B"))
-    else:
+    tmp = path.with_suffix(path.suffix + ".part")
+    if name.startswith(GEO_NAME) and name != GEO_ZIP:
+        with zipfile.ZipFile(ensure_file(path.parent / GEO_ZIP)) as z:
+            try:
+                data = z.read(f"{GEO_NAME}/{name}")
+            except KeyError:
+                raise FileNotFoundError(path) from None
+        tmp.write_bytes(data)
+        tmp.replace(path)
+        return path
+    if not name.startswith(MODEL_NAME) and name != GEO_ZIP:
         raise FileNotFoundError(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading {name} ...")
-    tmp = path.with_suffix(path.suffix + ".part")
     try:
-        urllib.request.urlretrieve(url, tmp)
+        urllib.request.urlretrieve(MODEL_URL.format(name), tmp)
     except BaseException:  # also Ctrl+C: never leave a partial file behind
         tmp.unlink(missing_ok=True)
         raise
@@ -172,7 +179,7 @@ class Model:
             s, e = self._split(self._run(np.ascontiguousarray(chunks[i : i + batch_size], dtype=np.float32)))
             scores.append(s)
             embs.append(e)
-        # Digital silence (zero variance) yields NaN; treat it as "nothing detected".
+        # Model files from before release 3.0.1 return NaN for digital silence; treat it as "nothing detected".
         return (
             np.nan_to_num(np.concatenate(scores)).astype(np.float32),
             np.nan_to_num(np.concatenate(embs)).astype(np.float32),
@@ -184,21 +191,21 @@ class GeoModel:
 
     See https://github.com/birdnet-team/geomodel. Weeks run from 1 to 48
     (four per month); week 0 or ``None`` returns the maximum over the year.
+    Its labels share the ``birdnet_id`` column with the acoustic model's labels.
     """
 
     def __init__(self, path: str | Path = DEFAULT_GEO_MODEL, labels: str | Path = DEFAULT_GEO_LABELS):
         import onnxruntime as ort
 
         self._session = ort.InferenceSession(str(ensure_file(path)), providers=["CPUExecutionProvider"])
-        with open(ensure_file(labels), encoding="utf-8") as f:
-            self.species = [line.rstrip("\n").split("\t")[1] for line in f]
+        self.ids = [row["birdnet_id"] for row in load_labels(labels)]
 
     def predict(self, lat: float, lon: float, week: int | None = None) -> dict[str, float]:
-        """Return ``{scientific name: probability}`` for all geomodel species."""
+        """Return ``{BirdNET ID: probability}`` for all geomodel species."""
         weeks = range(1, 49) if not week else [week]
         x = np.array([[lat, lon, w] for w in weeks], dtype=np.float32)
         probs = self._session.run(None, {self._session.get_inputs()[0].name: x})[0].max(axis=0)
-        return dict(zip(self.species, probs.tolist()))
+        return dict(zip(self.ids, probs.tolist()))
 
     def mask(
         self, labels: list[dict[str, str]], lat: float, lon: float, week: int | None = None, threshold: float = 0.03
@@ -207,5 +214,7 @@ class GeoModel:
 
         Classes the geomodel does not cover (e.g., non-animal sounds) stay True.
         """
+        if labels and "birdnet_id" not in labels[0]:
+            raise ValueError("The geomodel filter needs labels with a 'birdnet_id' column")
         probs = self.predict(lat, lon, week)
-        return np.array([probs.get(r["scientific_name"], 1.0) >= threshold for r in labels])
+        return np.array([probs.get(r["birdnet_id"], 1.0) >= threshold for r in labels])

@@ -87,7 +87,7 @@ if use_geo:
 st.title("BirdNET+ V3.0")
 st.caption(
     "11,709 species and 16 non-animal sound classes · 32 kHz audio · "
-    "[Models on Zenodo](https://zenodo.org/records/24162518)"
+    "[Models on Zenodo](https://zenodo.org/records/24362980)"
 )
 
 uploaded = st.file_uploader("Upload audio", type=["wav", "flac", "ogg", "mp3"])
